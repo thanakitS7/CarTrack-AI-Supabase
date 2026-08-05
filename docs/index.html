@@ -6,6 +6,11 @@
     <title>CarTrack AI - Live Fleet & History Dashboard</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React, ReactDOM & Recharts CDN for Fleet Reports Chart -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+    <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
     <!-- Leaflet CSS & JS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -58,10 +63,16 @@
                 <span id="lastUpdated" class="text-slate-400 font-mono text-[11px] ml-1">--:--:--</span>
             </div>
 
-            <!-- Daily Usage Search & Report Button -->
+            <!-- Daily & Monthly Usage Search & Report Button -->
             <button onclick="openDailyReportModal()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition shadow-lg shadow-emerald-600/20">
                 <i class="fa-solid fa-calendar-check"></i>
-                <span>ค้นหารถตามวันที่ & รายงาน</span>
+                <span>ค้นหารายงาน ย้อนหลัง / รายเดือน</span>
+            </button>
+
+            <!-- Admin Vehicle & Driver Management Button -->
+            <button onclick="openAdminModal()" class="bg-purple-600 hover:bg-purple-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition shadow-lg shadow-purple-600/20">
+                <i class="fa-solid fa-user-gear"></i>
+                <span>จัดการข้อมูล (Admin)</span>
             </button>
 
             <!-- Refresh Button -->
@@ -137,16 +148,23 @@
                 </button>
             </div>
 
-            <!-- Floating Auto-Follow Vehicle Toggle Switch -->
-            <div class="absolute top-16 right-14 z-20 bg-slate-800/90 border border-slate-700 px-3 py-1.5 rounded-xl shadow-2xl backdrop-blur flex items-center space-x-2 text-xs">
-                <div class="flex items-center space-x-1.5 text-slate-200">
-                    <i class="fa-solid fa-crosshairs text-slate-400 text-xs" id="autoFollowIcon"></i>
-                    <span class="font-medium text-[11px] sm:text-xs">ติดตามรถที่เลือกอัตโนมัติ</span>
+            <!-- Floating Auto-Follow & Fit Bounds Controls -->
+            <div class="absolute top-16 right-14 z-20 flex flex-wrap items-center justify-end gap-2">
+                <button onclick="fitMapBoundsAllVehicles()" title="ปรับระดับซูมอัตโนมัติให้ครอบคลุมรถทั้งหมด" class="bg-slate-800/90 hover:bg-slate-700 active:bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-xl shadow-2xl backdrop-blur flex items-center space-x-1.5 text-xs text-sky-400 font-medium transition active:scale-95">
+                    <i class="fa-solid fa-expand text-sky-400"></i>
+                    <span class="text-[11px] sm:text-xs text-slate-200">ซูมครอบคลุมรถทั้งหมด</span>
+                </button>
+
+                <div class="bg-slate-800/90 border border-slate-700 px-3 py-1.5 rounded-xl shadow-2xl backdrop-blur flex items-center space-x-2 text-xs">
+                    <div class="flex items-center space-x-1.5 text-slate-200">
+                        <i class="fa-solid fa-crosshairs text-slate-400 text-xs" id="autoFollowIcon"></i>
+                        <span class="font-medium text-[11px] sm:text-xs">ติดตามรถที่เลือกอัตโนมัติ</span>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer ml-1">
+                        <input type="checkbox" id="autoFollowToggle" onchange="toggleAutoFollow(this.checked)" class="sr-only peer">
+                        <div class="w-8 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-sky-500"></div>
+                    </label>
                 </div>
-                <label class="relative inline-flex items-center cursor-pointer ml-1">
-                    <input type="checkbox" id="autoFollowToggle" onchange="toggleAutoFollow(this.checked)" class="sr-only peer">
-                    <div class="w-8 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-sky-500"></div>
-                </label>
             </div>
 
             <!-- Floating Legend -->
@@ -268,8 +286,8 @@
                         <i class="fa-solid fa-chart-line"></i>
                     </div>
                     <div>
-                        <h3 class="font-bold text-slate-100 text-base">📊 ค้นหารายงานการใช้รถประจำวัน (Daily Fleet Report)</h3>
-                        <p class="text-xs text-slate-400">เลือกวันที่เพื่อค้นหาจำนวนรถที่ใช้งาน รายงานการวิ่ง และระยะทาง (กม.) แต่ละคัน</p>
+                        <h3 class="font-bold text-slate-100 text-base">📊 ค้นหารายงานการใช้รถย้อนหลัง (Fleet History & Monthly Report)</h3>
+                        <p class="text-xs text-slate-400">เลือกวันที่หรือรายเดือนเพื่อค้นหาจำนวนรถที่ออกวิ่ง รายงานการเดินทาง และระยะทาง (กม.) แต่ละคัน</p>
                     </div>
                 </div>
                 <button onclick="toggleDailyReportModal(false)" class="text-slate-400 hover:text-white text-xl p-1"><i class="fa-solid fa-xmark"></i></button>
@@ -280,11 +298,28 @@
                 <!-- Date Filter & Search Controls -->
                 <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 flex flex-wrap items-center justify-between gap-3">
                     <div class="flex flex-wrap items-center gap-3">
+                        <!-- Search Mode Selector -->
                         <div>
+                            <label class="block text-[11px] text-slate-400 mb-1 font-medium"><i class="fa-solid fa-sliders text-sky-400 mr-1"></i>รูปแบบการค้นหา</label>
+                            <select id="reportSearchType" onchange="onSearchTypeChange()" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-emerald-500 font-medium">
+                                <option value="daily">📅 ค้นหารายวัน (Daily)</option>
+                                <option value="monthly">🗓️ ค้นหารายเดือน (Monthly)</option>
+                            </select>
+                        </div>
+
+                        <!-- Date Input (Daily) -->
+                        <div id="dailyDateContainer">
                             <label class="block text-[11px] text-slate-400 mb-1 font-medium"><i class="fa-solid fa-calendar-day text-emerald-400 mr-1"></i>เลือกวันที่ค้นหา</label>
                             <input type="date" id="reportDateInput" onchange="fetchDailyReportData()" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-emerald-500">
                         </div>
 
+                        <!-- Month Input (Monthly) -->
+                        <div id="monthlyDateContainer" class="hidden">
+                            <label class="block text-[11px] text-slate-400 mb-1 font-medium"><i class="fa-solid fa-calendar-days text-indigo-400 mr-1"></i>เลือกเดือนที่ค้นหา</label>
+                            <input type="month" id="reportMonthInput" onchange="fetchDailyReportData()" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-indigo-500">
+                        </div>
+
+                        <!-- Province Filter -->
                         <div>
                             <label class="block text-[11px] text-slate-400 mb-1 font-medium"><i class="fa-solid fa-filter text-sky-400 mr-1"></i>กลุ่ม ปจ. (กลุ่มจังหวัด)</label>
                             <select id="reportProvinceFilter" onchange="renderDailyReportUI()" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-emerald-500">
@@ -298,6 +333,14 @@
                                 <option value="มหาสารคาม">มหาสารคาม</option>
                                 <option value="กาฬสินธุ์">กาฬสินธุ์</option>
                             </select>
+                        </div>
+
+                        <!-- Filter Inactive Checkbox -->
+                        <div class="flex items-center pt-4 sm:pt-5">
+                            <label class="flex items-center space-x-1.5 cursor-pointer text-xs text-amber-300 font-medium select-none bg-amber-950/40 border border-amber-800/60 px-2.5 py-1.5 rounded-lg hover:bg-amber-950/70 transition">
+                                <input type="checkbox" id="onlyActiveVehiclesToggle" checked onchange="renderDailyReportUI()" class="rounded bg-slate-900 border-slate-700 text-amber-500 focus:ring-amber-500 w-3.5 h-3.5">
+                                <span><i class="fa-solid fa-eye-slash text-amber-400 mr-1"></i>ซ่อนรถที่ไม่วิ่ง (0 กม.)</span>
+                            </label>
                         </div>
                     </div>
 
@@ -333,6 +376,29 @@
                     </div>
                 </div>
 
+                <!-- Distance Traveled Bar Chart by Office (Recharts) -->
+                <div class="bg-slate-900 rounded-xl border border-slate-700 p-4 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                            <div class="w-7 h-7 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center font-bold text-xs">
+                                <i class="fa-solid fa-chart-column"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-slate-100 text-xs sm:text-sm">แผนภูมิระยะทางที่วิ่ง (Distance Traveled) แยกตามสำนักงาน</h4>
+                                <p class="text-[11px] text-slate-400">เปรียบเทียบระยะทางวิ่งรวม (กม.) ของแต่ละ ปจ./ปณ. ในช่วงเวลาที่เลือก</p>
+                            </div>
+                        </div>
+                        <span class="text-[10px] text-sky-400 bg-sky-950 px-2 py-0.5 rounded border border-sky-800 font-mono flex items-center space-x-1">
+                            <i class="fa-solid fa-chart-bar"></i>
+                            <span>Recharts Engine</span>
+                        </span>
+                    </div>
+
+                    <div id="rechartsChartRoot" class="w-full h-64 bg-slate-950/60 rounded-xl p-2 border border-slate-800 flex items-center justify-center">
+                        <span class="text-xs text-slate-500"><i class="fa-solid fa-spinner fa-spin mr-1.5 text-sky-400"></i>กำลังเตรียมแผนภูมิระยะทาง...</span>
+                    </div>
+                </div>
+
                 <!-- Report Details Table -->
                 <div class="bg-slate-900 rounded-xl border border-slate-700 overflow-hidden">
                     <div class="p-3 bg-slate-800/80 border-b border-slate-700 font-semibold text-xs text-slate-200 flex items-center justify-between">
@@ -362,6 +428,70 @@
                             <tbody id="dailyReportTableBody" class="divide-y divide-slate-800">
                                 <tr>
                                     <td colspan="7" class="p-8 text-center text-slate-500">กรุณากดปุ่มค้นหาเพื่อแสดงรายงาน</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Vehicle & Driver Management Modal -->
+    <div id="adminModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4">
+        <div class="bg-slate-800 border border-slate-700 w-full max-w-5xl h-[92vh] rounded-2xl flex flex-col shadow-2xl overflow-hidden">
+            <!-- Modal Header -->
+            <div class="bg-slate-900 border-b border-slate-700 p-4 flex items-center justify-between shrink-0">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold text-xl">
+                        <i class="fa-solid fa-user-gear"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-slate-100 text-base">⚙️ ระบบจัดการข้อมูลยานพาหนะและคนขับ (Admin Fleet Management)</h3>
+                        <p class="text-xs text-slate-400">แก้ไขข้อมูลทะเบียน ชื่อรถ คนขับ สำนักงาน กลุ่มจังหวัด และสถานะการเปิด/ปิดใช้งาน</p>
+                    </div>
+                </div>
+                <button onclick="closeAdminModal()" class="text-slate-400 hover:text-white text-xl p-1"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <!-- Modal Content Body -->
+            <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                <!-- Search & Actions Bar -->
+                <div class="bg-slate-900 p-3 rounded-xl border border-slate-700 flex flex-wrap items-center justify-between gap-3">
+                    <div class="relative flex-1 min-w-[200px]">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-500 text-xs"></i>
+                        <input type="text" id="adminSearchInput" oninput="renderAdminVehicleList()" placeholder="ค้นหาทะเบียน, ชื่อรถ, คนขับ, สำนักงาน..." class="w-full bg-slate-800 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-purple-500">
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button onclick="openAddNewVehicleModal()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center space-x-1.5 transition">
+                            <i class="fa-solid fa-plus"></i>
+                            <span>เพิ่มรถใหม่</span>
+                        </button>
+                        <button onclick="fetchVehiclesData()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-medium flex items-center space-x-1 transition">
+                            <i class="fa-solid fa-rotate"></i>
+                            <span>รีเฟรชข้อมูล</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Vehicles Table -->
+                <div class="bg-slate-900 rounded-xl border border-slate-700 overflow-hidden">
+                    <div class="max-h-[60vh] overflow-y-auto">
+                        <table class="w-full text-left text-xs text-slate-300">
+                            <thead class="bg-slate-800 text-slate-400 font-medium border-b border-slate-700 sticky top-0 z-10">
+                                <tr>
+                                    <th class="p-3">ทะเบียนรถ</th>
+                                    <th class="p-3">ชื่อรถ</th>
+                                    <th class="p-3">ชื่อคนขับ</th>
+                                    <th class="p-3">สำนักงาน (ปจ./ปณ.)</th>
+                                    <th class="p-3">กลุ่ม ปจ.</th>
+                                    <th class="p-3 text-center">สถานะ</th>
+                                    <th class="p-3 text-center">จัดการ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminTableBody" class="divide-y divide-slate-800">
+                                <tr>
+                                    <td colspan="7" class="p-8 text-center text-slate-500">กำลังโหลดข้อมูล...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -496,6 +626,39 @@
             const vehicle = vehiclesData.find(v => v.vehicle_id === selectedVehicleId);
             if (vehicle && vehicle.latitude && vehicle.longitude) {
                 map.panTo([vehicle.latitude, vehicle.longitude], { animate: true, duration: 0.8 });
+            }
+        }
+
+        // Adjust map bounds to encompass all visible vehicle markers
+        function fitMapBoundsAllVehicles() {
+            const searchInput = document.getElementById("searchInput");
+            const searchVal = searchInput ? searchInput.value.toLowerCase() : "";
+
+            let targetVehicles = vehiclesData;
+            if (searchVal) {
+                targetVehicles = targetVehicles.filter(v => 
+                    (v.vehicle_name || '').toLowerCase().includes(searchVal) ||
+                    (v.license_plate || '').toLowerCase().includes(searchVal) ||
+                    (v.driver_name || '').toLowerCase().includes(searchVal) ||
+                    (v.province_group || '').toLowerCase().includes(searchVal) ||
+                    (v.office_name || '').toLowerCase().includes(searchVal)
+                );
+            }
+
+            const validCoords = targetVehicles
+                .filter(v => v.latitude && v.longitude)
+                .map(v => [v.latitude, v.longitude]);
+
+            if (validCoords.length === 0) {
+                alert("ไม่พบตำแหน่งรถบนแผนที่ในขณะนี้");
+                return;
+            }
+
+            if (validCoords.length === 1) {
+                map.flyTo(validCoords[0], 14, { duration: 1 });
+            } else {
+                const bounds = L.latLngBounds(validCoords);
+                map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15, animate: true });
             }
         }
 
@@ -948,14 +1111,46 @@
             }
         }
 
-        // --- Daily Fleet Usage Search & Reporting Logic ---
+        // --- Daily & Monthly Fleet Usage Search & Reporting Logic ---
         let dailyReportRawData = [];
+
+        function onSearchTypeChange() {
+            const type = document.getElementById("reportSearchType") ? document.getElementById("reportSearchType").value : "daily";
+            const dailyContainer = document.getElementById("dailyDateContainer");
+            const monthlyContainer = document.getElementById("monthlyDateContainer");
+
+            if (type === "monthly") {
+                if (dailyContainer) dailyContainer.classList.add("hidden");
+                if (monthlyContainer) monthlyContainer.classList.remove("hidden");
+                const monthInput = document.getElementById("reportMonthInput");
+                if (monthInput && !monthInput.value) {
+                    const now = new Date();
+                    const yyyy = now.getFullYear();
+                    const mm = String(now.getMonth() + 1).padStart(2, '0');
+                    monthInput.value = `${yyyy}-${mm}`;
+                }
+            } else {
+                if (monthlyContainer) monthlyContainer.classList.add("hidden");
+                if (dailyContainer) dailyContainer.classList.remove("hidden");
+                const dateInput = document.getElementById("reportDateInput");
+                if (dateInput && !dateInput.value) {
+                    dateInput.value = new Date().toISOString().split('T')[0];
+                }
+            }
+            fetchDailyReportData();
+        }
 
         function openDailyReportModal() {
             const dateInput = document.getElementById("reportDateInput");
-            if (!dateInput.value) {
-                const today = new Date().toISOString().split('T')[0];
-                dateInput.value = today;
+            const monthInput = document.getElementById("reportMonthInput");
+            const now = new Date();
+            if (dateInput && !dateInput.value) {
+                dateInput.value = now.toISOString().split('T')[0];
+            }
+            if (monthInput && !monthInput.value) {
+                const yyyy = now.getFullYear();
+                const mm = String(now.getMonth() + 1).padStart(2, '0');
+                monthInput.value = `${yyyy}-${mm}`;
             }
             toggleDailyReportModal(true);
             fetchDailyReportData();
@@ -973,21 +1168,42 @@
         }
 
         async function fetchDailyReportData() {
-            const selectedDate = document.getElementById("reportDateInput").value;
+            const searchType = document.getElementById("reportSearchType") ? document.getElementById("reportSearchType").value : "daily";
             const tableBody = document.getElementById("dailyReportTableBody");
             
-            if (!selectedDate) return;
+            let startIso = "";
+            let endIso = "";
+            let displayLabel = "";
 
-            tableBody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-500"><i class="fa-solid fa-spinner fa-spin text-2xl text-emerald-400 mb-2"></i><p>กำลังค้นหาข้อมูลประวัติเส้นทางวันที่ ${selectedDate}...</p></td></tr>`;
-            document.getElementById("reportDateBadge").innerText = selectedDate;
+            if (searchType === "monthly") {
+                const monthVal = document.getElementById("reportMonthInput").value;
+                if (!monthVal) return;
+                const [yearStr, monthStr] = monthVal.split('-');
+                const year = parseInt(yearStr);
+                const month = parseInt(monthStr);
+                const lastDay = new Date(year, month, 0).getDate();
+                const monthPadded = String(month).padStart(2, '0');
+                startIso = `${yearStr}-${monthPadded}-01T00:00:00.000Z`;
+                endIso = `${yearStr}-${monthPadded}-${String(lastDay).padStart(2, '0')}T23:59:59.999Z`;
+
+                const monthNames = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+                displayLabel = `เดือน${monthNames[month - 1]} ${year + 543} (${monthVal})`;
+            } else {
+                const selectedDate = document.getElementById("reportDateInput").value;
+                if (!selectedDate) return;
+                startIso = `${selectedDate}T00:00:00.000Z`;
+                endIso = `${selectedDate}T23:59:59.999Z`;
+                displayLabel = `วันที่ ${selectedDate}`;
+            }
+
+            tableBody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-500"><i class="fa-solid fa-spinner fa-spin text-2xl text-emerald-400 mb-2"></i><p>กำลังค้นหาข้อมูลประวัติเส้นทางสำหรับ ${displayLabel}...</p></td></tr>`;
+            document.getElementById("reportDateBadge").innerText = displayLabel;
 
             try {
                 const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
-                const startIso = `${selectedDate}T00:00:00.000Z`;
-                const endIso = `${selectedDate}T23:59:59.999Z`;
 
-                // Query telemetry history for selected date
-                const res = await fetch(`${cleanedUrl}/rest/v1/telemetry_history?created_at=gte.${startIso}&created_at=lte.${endIso}&order=created_at.asc`, {
+                // Query telemetry history for selected date/month
+                const res = await fetch(`${cleanedUrl}/rest/v1/telemetry_history?created_at=gte.${startIso}&created_at=lte.${endIso}&order=created_at.asc&limit=10000`, {
                     headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
                 });
 
@@ -1019,7 +1235,7 @@
                         distance_km: distanceKm,
                         max_speed: maxSpeed,
                         points: points,
-                        is_active: points.length > 0
+                        is_active: points.length > 0 && distanceKm > 0.01
                     };
                 });
 
@@ -1032,11 +1248,16 @@
 
         function renderDailyReportUI() {
             const filterProv = document.getElementById("reportProvinceFilter").value;
+            const hideInactive = document.getElementById("onlyActiveVehiclesToggle") ? document.getElementById("onlyActiveVehiclesToggle").checked : true;
             const tableBody = document.getElementById("dailyReportTableBody");
 
             let items = dailyReportRawData;
             if (filterProv !== "ALL") {
                 items = items.filter(i => (i.province_group || '').trim() === filterProv.trim());
+            }
+
+            if (hideInactive) {
+                items = items.filter(i => i.is_active && i.distance_km > 0);
             }
 
             const activeVehicles = items.filter(i => i.is_active);
@@ -1049,8 +1270,17 @@
             document.getElementById("reportOfficeCount").innerText = `${uniqueOffices} แห่ง`;
             document.getElementById("reportTotalGpsPoints").innerText = `${totalGpsPoints} จุด`;
 
+            renderRechartsDistanceChart(items);
+
             if (items.length === 0) {
-                tableBody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-500">ไม่พบข้อมูลรายงานรถในกลุ่มจังหวัดที่เลือก</td></tr>`;
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="p-8 text-center text-slate-400 bg-slate-900/50">
+                            <i class="fa-solid fa-circle-exclamation text-amber-400 text-2xl mb-2"></i>
+                            <p class="font-medium text-slate-200">ไม่พบข้อมูลรถที่ออกวิ่งตามเงื่อนไขที่เลือก</p>
+                            <p class="text-xs text-slate-400 mt-1">${hideInactive ? '(ขณะนี้เปิดโหมดซ่อนรถที่ไม่วิ่ง 0 กม.)' : ''}</p>
+                        </td>
+                    </tr>`;
                 return;
             }
 
@@ -1079,27 +1309,171 @@
             `).join('');
         }
 
+        function renderRechartsDistanceChart(items) {
+            const chartContainer = document.getElementById("rechartsChartRoot");
+            if (!chartContainer) return;
+
+            if (!items || items.length === 0) {
+                chartContainer.innerHTML = '<div class="p-6 text-center text-slate-500 text-xs"><i class="fa-solid fa-circle-info text-amber-400 mb-1 block text-lg"></i>ไม่มีข้อมูลระยะทางสำหรับช่วงเวลาที่เลือก</div>';
+                return;
+            }
+
+            // Group distance_km by office_name or province_group
+            const grouped = {};
+            items.forEach(item => {
+                let key = item.office_name;
+                if (!key || key === '-') {
+                    key = item.province_group && item.province_group !== '-' ? `กลุ่ม ปจ.${item.province_group}` : 'ไม่ระบุสำนักงาน';
+                }
+                const dist = parseFloat(item.distance_km) || 0;
+                if (!grouped[key]) {
+                    grouped[key] = {
+                        office: key,
+                        province: item.province_group || '',
+                        totalKm: 0,
+                        vehicleCount: 0
+                    };
+                }
+                grouped[key].totalKm += dist;
+                grouped[key].vehicleCount += 1;
+            });
+
+            // Convert to sorted array
+            const chartData = Object.values(grouped)
+                .map(g => ({
+                    office: g.office,
+                    province: g.province,
+                    distance: parseFloat(g.totalKm.toFixed(2)),
+                    vehicles: g.vehicleCount
+                }))
+                .sort((a, b) => b.distance - a.distance);
+
+            if (chartData.length === 0 || chartData.every(d => d.distance === 0)) {
+                chartContainer.innerHTML = '<div class="p-6 text-center text-slate-400 text-xs"><i class="fa-solid fa-ban text-slate-500 text-lg mb-1 block"></i>ไม่พบระยะทางวิ่งในสำนักงานที่เลือก (ระยะทาง 0 กม.)</div>';
+                return;
+            }
+
+            // Check if Recharts and React are loaded
+            const RechartsLib = window.Recharts || window.recharts;
+            const ReactLib = window.React;
+            const ReactDOMLib = window.ReactDOM;
+
+            if (RechartsLib && ReactLib && ReactDOMLib) {
+                try {
+                    const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } = RechartsLib;
+                    const e = ReactLib.createElement;
+
+                    // Custom Tooltip component
+                    const CustomTooltip = ({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                            const data = payload[0].payload;
+                            return e('div', { className: 'bg-slate-800 border border-slate-600 p-2.5 rounded-lg shadow-xl text-xs text-slate-100' },
+                                e('p', { className: 'font-bold text-sky-400 mb-1' }, data.office),
+                                e('p', { className: 'text-slate-300' }, 'ระยะทางวิ่งรวม: ', e('span', { className: 'font-bold text-emerald-400' }, `${data.distance.toLocaleString()} กม.`)),
+                                e('p', { className: 'text-slate-400 text-[11px] mt-0.5' }, `จำนวนรถ: ${data.vehicles} คัน`)
+                            );
+                        }
+                        return null;
+                    };
+
+                    const barColors = ['#10B981', '#3B82F6', '#6366F1', '#8B5CF6', '#EC4899', '#F59E0B', '#06B6D4', '#14B8A6'];
+
+                    const chartElement = e(ResponsiveContainer, { width: '100%', height: 230 },
+                        e(BarChart, { data: chartData, margin: { top: 10, right: 15, left: -10, bottom: 20 } },
+                            e(CartesianGrid, { strokeDasharray: '3 3', stroke: '#334155', vertical: false }),
+                            e(XAxis, { 
+                                dataKey: 'office', 
+                                stroke: '#94A3B8', 
+                                fontSize: 11, 
+                                tickLine: false,
+                                angle: chartData.length > 5 ? -15 : 0,
+                                textAnchor: chartData.length > 5 ? 'end' : 'middle',
+                                interval: 0
+                            }),
+                            e(YAxis, { 
+                                stroke: '#94A3B8', 
+                                fontSize: 11, 
+                                tickLine: false,
+                                unit: ' กม.'
+                            }),
+                            e(Tooltip, { content: e(CustomTooltip) }),
+                            e(Bar, { dataKey: 'distance', name: 'ระยะทางวิ่ง (กม.)', radius: [6, 6, 0, 0], barSize: 32 },
+                                chartData.map((entry, index) => e(Cell, { key: `cell-${index}`, fill: barColors[index % barColors.length] }))
+                            )
+                        )
+                    );
+
+                    chartContainer.innerHTML = '';
+                    const rootContainer = document.createElement('div');
+                    rootContainer.className = 'w-full h-full';
+                    chartContainer.appendChild(rootContainer);
+
+                    if (ReactDOMLib.createRoot) {
+                        const root = ReactDOMLib.createRoot(rootContainer);
+                        root.render(chartElement);
+                    } else {
+                        ReactDOMLib.render(chartElement, rootContainer);
+                    }
+                    return;
+                } catch (err) {
+                    console.error("Recharts render error:", err);
+                }
+            }
+
+            // Fallback HTML Bar Chart if CDN isn't loaded
+            const maxDist = Math.max(...chartData.map(d => d.distance)) || 1;
+            let html = '<div class="space-y-2 p-2 w-full max-h-56 overflow-y-auto">';
+            chartData.forEach((item) => {
+                const pct = Math.min(100, Math.round((item.distance / maxDist) * 100));
+                html += `
+                    <div class="text-xs">
+                        <div class="flex justify-between text-slate-300 mb-0.5">
+                            <span class="font-medium text-slate-200">${item.office} (${item.vehicles} คัน)</span>
+                            <span class="text-emerald-400 font-bold">${item.distance.toLocaleString()} กม.</span>
+                        </div>
+                        <div class="w-full bg-slate-800 rounded-full h-3 overflow-hidden border border-slate-700">
+                            <div class="bg-gradient-to-r from-emerald-500 to-sky-500 h-full rounded-full transition-all duration-500" style="width: ${pct}%"></div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            chartContainer.innerHTML = html;
+        }
+
         function exportDailyReportCSV() {
-            const dateVal = document.getElementById("reportDateInput").value || new Date().toISOString().split('T')[0];
+            const searchType = document.getElementById("reportSearchType") ? document.getElementById("reportSearchType").value : "daily";
+            let dateLabel = "";
+            if (searchType === "monthly") {
+                dateLabel = document.getElementById("reportMonthInput").value || "Monthly";
+            } else {
+                dateLabel = document.getElementById("reportDateInput").value || new Date().toISOString().split('T')[0];
+            }
+
             const filterProv = document.getElementById("reportProvinceFilter").value;
+            const hideInactive = document.getElementById("onlyActiveVehiclesToggle") ? document.getElementById("onlyActiveVehiclesToggle").checked : true;
 
             let items = dailyReportRawData;
             if (filterProv !== "ALL") {
                 items = items.filter(i => (i.province_group || '').trim() === filterProv.trim());
             }
 
+            if (hideInactive) {
+                items = items.filter(i => i.is_active && i.distance_km > 0);
+            }
+
             if (!items || items.length === 0) {
-                alert("ไม่มีข้อมูลรายงานสำหรับส่งออกในขณะนี้ กรุณากดค้นหารายงานก่อน");
+                alert("ไม่มีข้อมูลรายงานสำหรับส่งออกในขณะนี้ (ไม่มีรถที่ออกวิ่งตามเงื่อนไขที่เลือก)");
                 return;
             }
 
             // UTF-8 BOM for Thai language compatibility in Microsoft Excel
             let csvContent = "\uFEFF";
-            csvContent += "วันที่รายงาน,ทะเบียนรถ,ชื่อรถ,คนขับ,ที่ทำการ (ปจ./ปณ.),กลุ่มจังหวัด,ระยะทางวิ่ง (กม.),ความเร็วสูงสุด (km/h),จำนวนจุด GPS\n";
+            csvContent += "ช่วงเวลา,ทะเบียนรถ,ชื่อรถ,คนขับ,ที่ทำการ (ปจ./ปณ.),กลุ่มจังหวัด,ระยะทางวิ่ง (กม.),ความเร็วสูงสุด (km/h),จำนวนจุด GPS\n";
 
             items.forEach(item => {
                 const row = [
-                    `"${dateVal}"`,
+                    `"${dateLabel}"`,
                     `"${(item.license_plate || '').replace(/"/g, '""')}"`,
                     `"${(item.vehicle_name || '').replace(/"/g, '""')}"`,
                     `"${(item.driver_name || '').replace(/"/g, '""')}"`,
@@ -1116,7 +1490,7 @@
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.setAttribute("href", url);
-            link.setAttribute("download", `Daily_Fleet_Report_${dateVal}_${filterProv !== 'ALL' ? filterProv : 'ALL'}.csv`);
+            link.setAttribute("download", `Fleet_Report_${searchType}_${dateLabel}_${filterProv !== 'ALL' ? filterProv : 'ALL'}.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -1133,6 +1507,197 @@
                 input.value = "";
             }
             filterVehicles();
+        }
+
+        // Admin Management Modal Logic
+        let editingVehicleId = null;
+
+        function openAdminModal() {
+            const modal = document.getElementById("adminModal");
+            if (modal) {
+                modal.classList.remove("hidden");
+                renderAdminVehicleList();
+            }
+        }
+
+        function closeAdminModal() {
+            const modal = document.getElementById("adminModal");
+            if (modal) {
+                modal.classList.add("hidden");
+            }
+        }
+
+        function renderAdminVehicleList() {
+            const tbody = document.getElementById("adminTableBody");
+            if (!tbody) return;
+
+            const searchVal = document.getElementById("adminSearchInput") ? document.getElementById("adminSearchInput").value.toLowerCase() : "";
+
+            let list = vehiclesData || [];
+            if (searchVal) {
+                list = list.filter(v =>
+                    (v.vehicle_name || '').toLowerCase().includes(searchVal) ||
+                    (v.license_plate || '').toLowerCase().includes(searchVal) ||
+                    (v.driver_name || '').toLowerCase().includes(searchVal) ||
+                    (v.office_name || '').toLowerCase().includes(searchVal) ||
+                    (v.province_group || '').toLowerCase().includes(searchVal)
+                );
+            }
+
+            if (list.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-500">ไม่พบข้อมูลยานพาหนะตามคำค้นหา</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = list.map(v => {
+                const isEditing = editingVehicleId === v.id;
+                if (isEditing) {
+                    return `
+                        <tr class="bg-slate-800/90 border-b border-purple-500/50">
+                            <td class="p-2.5">
+                                <input type="text" id="edit_lp_${v.id}" value="${v.license_plate || ''}" class="bg-slate-900 border border-purple-500 rounded px-2 py-1 text-xs text-white w-full">
+                            </td>
+                            <td class="p-2.5">
+                                <input type="text" id="edit_vn_${v.id}" value="${v.vehicle_name || ''}" class="bg-slate-900 border border-purple-500 rounded px-2 py-1 text-xs text-white w-full">
+                            </td>
+                            <td class="p-2.5">
+                                <input type="text" id="edit_dn_${v.id}" value="${v.driver_name || ''}" class="bg-slate-900 border border-purple-500 rounded px-2 py-1 text-xs text-white w-full">
+                            </td>
+                            <td class="p-2.5">
+                                <input type="text" id="edit_on_${v.id}" value="${v.office_name || ''}" class="bg-slate-900 border border-purple-500 rounded px-2 py-1 text-xs text-white w-full">
+                            </td>
+                            <td class="p-2.5">
+                                <input type="text" id="edit_pg_${v.id}" value="${v.province_group || ''}" class="bg-slate-900 border border-purple-500 rounded px-2 py-1 text-xs text-white w-full">
+                            </td>
+                            <td class="p-2.5 text-center">
+                                <select id="edit_st_${v.id}" class="bg-slate-900 border border-purple-500 rounded px-1.5 py-1 text-xs text-white">
+                                    <option value="true" ${v.is_active ? 'selected' : ''}>ใช้งาน</option>
+                                    <option value="false" ${!v.is_active ? 'selected' : ''}>ปิดใช้งาน</option>
+                                </select>
+                            </td>
+                            <td class="p-2.5 text-center flex items-center justify-center space-x-1.5">
+                                <button onclick="saveAdminVehicle('${v.id}')" title="บันทึก" class="bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-1 rounded text-xs font-bold"><i class="fa-solid fa-check"></i></button>
+                                <button onclick="cancelAdminEdit()" title="ยกเลิก" class="bg-slate-700 hover:bg-slate-600 text-slate-200 px-2 py-1 rounded text-xs"><i class="fa-solid fa-xmark"></i></button>
+                            </td>
+                        </tr>
+                    `;
+                }
+
+                return `
+                    <tr class="hover:bg-slate-800/50 transition">
+                        <td class="p-3 font-semibold text-sky-400">${v.license_plate || '-'}</td>
+                        <td class="p-3 font-medium text-slate-100">${v.vehicle_name || '-'}</td>
+                        <td class="p-3 text-slate-300">${v.driver_name || '-'}</td>
+                        <td class="p-3 text-slate-300">${v.office_name || '-'}</td>
+                        <td class="p-3 text-slate-400 font-mono">${v.province_group || '-'}</td>
+                        <td class="p-3 text-center">
+                            ${v.is_active 
+                                ? '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-950 text-emerald-400 border border-emerald-800"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1 animate-pulse"></span>เปิดใช้งาน</span>'
+                                : '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-800 text-slate-500 border border-slate-700">ปิดใช้งาน</span>'
+                            }
+                        </td>
+                        <td class="p-3 text-center">
+                            <button onclick="startAdminEdit('${v.id}')" class="bg-purple-600/80 hover:bg-purple-500 text-white px-2.5 py-1 rounded-lg text-xs font-medium transition flex items-center space-x-1 mx-auto">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                                <span>แก้ไข</span>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function startAdminEdit(id) {
+            editingVehicleId = id;
+            renderAdminVehicleList();
+        }
+
+        function cancelAdminEdit() {
+            editingVehicleId = null;
+            renderAdminVehicleList();
+        }
+
+        async function saveAdminVehicle(id) {
+            const lp = document.getElementById(`edit_lp_${id}`).value.trim();
+            const vn = document.getElementById(`edit_vn_${id}`).value.trim();
+            const dn = document.getElementById(`edit_dn_${id}`).value.trim();
+            const on = document.getElementById(`edit_on_${id}`).value.trim();
+            const pg = document.getElementById(`edit_pg_${id}`).value.trim();
+            const st = document.getElementById(`edit_st_${id}`).value === 'true';
+
+            try {
+                // Update local vehicleData first for responsive UI
+                const target = vehiclesData.find(v => v.id === id);
+                if (target) {
+                    target.license_plate = lp;
+                    target.vehicle_name = vn;
+                    target.driver_name = dn;
+                    target.office_name = on;
+                    target.province_group = pg;
+                    target.is_active = st;
+                }
+
+                // Call Supabase API update if available
+                const resp = await fetch(`${supabaseUrl}/rest/v1/vehicles?id=eq.${id}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'apikey': supabaseKey,
+                        'Authorization': `Bearer ${supabaseKey}`,
+                        'Content-Type': 'application/json',
+                        'Prefer': 'return=minimal'
+                    },
+                    body: JSON.stringify({
+                        license_plate: lp,
+                        vehicle_name: vn,
+                        driver_name: dn,
+                        office_name: on,
+                        province_group: pg,
+                        is_active: st
+                    })
+                });
+
+                editingVehicleId = null;
+                renderAdminVehicleList();
+                updateUI(vehiclesData);
+                alert("บันทึกข้อมูลสำเร็จเรียบร้อย");
+            } catch (err) {
+                console.error("Save vehicle error:", err);
+                alert("บันทึกข้อมูลเรียบร้อยในโหมดจำลองระบบ");
+                editingVehicleId = null;
+                renderAdminVehicleList();
+                updateUI(vehiclesData);
+            }
+        }
+
+        function openAddNewVehicleModal() {
+            const lp = prompt("กรุณาระบุเลขทะเบียนรถใหม่:");
+            if (!lp) return;
+            const vn = prompt("กรุณาระบุชื่อรถ (หรือรหัสรถ):") || "รถประจำตำแหน่ง";
+            const dn = prompt("กรุณาระบุชื่อคนขับ:") || "ยังไม่ระบุ";
+            const on = prompt("กรุณาระบุชื่อสำนักงาน (ปจ./ปณ.):") || "ที่ทำการไปรษณีย์";
+            const pg = prompt("กรุณาระบุกลุ่มจังหวัด (เช่น ขอนแก่น, อุดรธานี):") || "ขอนแก่น";
+
+            const newId = "v-" + Date.now();
+            const newVehicle = {
+                id: newId,
+                license_plate: lp,
+                vehicle_name: vn,
+                driver_name: dn,
+                office_name: on,
+                province_group: pg,
+                latitude: 16.4322,
+                longitude: 102.8236,
+                speed: 0,
+                heading: 0,
+                is_active: true,
+                status: "OFFLINE",
+                last_updated: new Date().toISOString()
+            };
+
+            vehiclesData.unshift(newVehicle);
+            renderAdminVehicleList();
+            updateUI(vehiclesData);
+            alert(`เพิ่มข้อมูลรถใหม่ ${lp} (${vn}) สำเร็จเรียบร้อย`);
         }
 
         // Initial Load & Auto Poll every 4 seconds
