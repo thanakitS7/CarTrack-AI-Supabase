@@ -289,6 +289,12 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
 
                 // Auto-sync real GPS coordinates to Supabase & Google Sheets if trip is active
                 val now = System.currentTimeMillis()
+                val currentStatus = if (_isTripActive.value) {
+                    if (speedKmh > 3) "MOVING (กำลังวิ่ง GPS สด)" else "MOVING (เริ่มเดินทาง GPS สด)"
+                } else {
+                    if (speedKmh > 3) "MOVING (ขับขี่พักทริป)" else "IDLE (จอดพัก)"
+                }
+
                 if (_isTripActive.value && (now - lastSyncTimeMs > 5000L)) {
                     lastSyncTimeMs = now
                     
@@ -301,7 +307,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                                 vehicleName = vehicle.name,
                                 licensePlate = vehicle.licensePlate,
                                 driverName = vehicle.driverName,
-                                status = if (speedKmh > 3) "MOVING (GPS สด)" else "IDLE (จอดพัก)",
+                                status = currentStatus,
                                 latitude = lat,
                                 longitude = lng,
                                 speedKmh = speedKmh,
@@ -319,7 +325,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                             vehicleName = vehicle.name,
                             licensePlate = vehicle.licensePlate,
                             driverName = vehicle.driverName,
-                            status = if (speedKmh > 3) "MOVING (GPS สด)" else "IDLE (จอดพัก)",
+                            status = currentStatus,
                             latitude = lat,
                             longitude = lng,
                             speedKmh = speedKmh,
@@ -372,19 +378,40 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                     heading = vehicle.headingBearing
                 )
                 _lastSyncStatus.value = "เริ่มออกเดินทางแล้ว (เปิดรับส่งพิกัดสด GPS มือถือ)"
-                com.example.util.GoogleSheetsSyncManager.sendTelemetryToGoogleSheets(
-                    webhookUrl = _googleSheetsUrl.value,
-                    vehicleId = vehicle.id,
-                    vehicleName = vehicle.name,
-                    licensePlate = vehicle.licensePlate,
-                    driverName = vehicle.driverName,
-                    status = "MOVING (เริ่มเดินทาง GPS สด)",
-                    latitude = vehicle.currentLat,
-                    longitude = vehicle.currentLng,
-                    speedKmh = vehicle.speedKmh,
-                    fuelPercent = vehicle.fuelPercent,
-                    batteryVoltage = vehicle.batteryVoltage
-                )
+                val currentStatus = "MOVING (เริ่มเดินทาง GPS สด)"
+                
+                if (_isSupabaseSyncEnabled.value) {
+                    com.example.util.SupabaseSyncManager.sendTelemetryToSupabase(
+                        baseUrl = _supabaseUrl.value,
+                        anonKey = _supabaseAnonKey.value,
+                        vehicleId = vehicle.id,
+                        vehicleName = vehicle.name,
+                        licensePlate = vehicle.licensePlate,
+                        driverName = vehicle.driverName,
+                        status = currentStatus,
+                        latitude = vehicle.currentLat,
+                        longitude = vehicle.currentLng,
+                        speedKmh = vehicle.speedKmh,
+                        fuelPercent = vehicle.fuelPercent,
+                        batteryVoltage = vehicle.batteryVoltage
+                    )
+                }
+
+                if (_isGoogleSheetsSyncEnabled.value) {
+                    com.example.util.GoogleSheetsSyncManager.sendTelemetryToGoogleSheets(
+                        webhookUrl = _googleSheetsUrl.value,
+                        vehicleId = vehicle.id,
+                        vehicleName = vehicle.name,
+                        licensePlate = vehicle.licensePlate,
+                        driverName = vehicle.driverName,
+                        status = currentStatus,
+                        latitude = vehicle.currentLat,
+                        longitude = vehicle.currentLng,
+                        speedKmh = vehicle.speedKmh,
+                        fuelPercent = vehicle.fuelPercent,
+                        batteryVoltage = vehicle.batteryVoltage
+                    )
+                }
             }
         }
     }
