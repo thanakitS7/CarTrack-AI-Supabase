@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DirectionsCar
@@ -36,6 +39,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -465,6 +470,12 @@ fun AdminUserManagementScreen(viewModel: TrackingViewModel) {
                                                     color = Color.LightGray,
                                                     fontSize = 12.sp
                                                 )
+                                                Text(
+                                                    text = "🏢 ${vehicle.officeName} • 📍 กลุ่มจังหวัด: ${vehicle.provinceGroup}",
+                                                    color = Color(0xFF38BDF8),
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Medium
+                                                )
                                             }
                                         }
 
@@ -599,6 +610,20 @@ fun AdminUserManagementScreen(viewModel: TrackingViewModel) {
         var editLicensePlate by remember { mutableStateOf(currentV.licensePlate) }
         var editModelYear by remember { mutableStateOf(currentV.modelYear) }
         var editDriverName by remember { mutableStateOf(currentV.driverName) }
+        var editOfficeName by remember { mutableStateOf(currentV.officeName) }
+        var editProvinceGroup by remember { mutableStateOf(currentV.provinceGroup) }
+        var editProvinceDropdownExpanded by remember { mutableStateOf(false) }
+
+        val provinceList = listOf(
+            "บึงกาฬ",
+            "หนองบัวลำภู",
+            "ขอนแก่น",
+            "อุดรธานี",
+            "เลย",
+            "หนองคาย",
+            "มหาสารคาม",
+            "กาฬสินธุ์"
+        )
 
         AlertDialog(
             onDismissRequest = { vehicleToEdit = null },
@@ -608,7 +633,7 @@ fun AdminUserManagementScreen(viewModel: TrackingViewModel) {
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("การแก้ไขนี้จะอัปเดตไปยังหน้าแอพของผู้ใช้รถ (User) และ Google Sheets โดยอัตโนมัติ:", fontSize = 12.sp, color = Color(0xFF49454F))
+                    Text("การแก้ไขนี้จะอัปเดตไปยังหน้าแอพของผู้ใช้รถ (User) และ Google Sheets / Supabase โดยอัตโนมัติ:", fontSize = 12.sp, color = Color(0xFF49454F))
 
                     OutlinedTextField(
                         value = editDriverName,
@@ -620,6 +645,56 @@ fun AdminUserManagementScreen(viewModel: TrackingViewModel) {
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    OutlinedTextField(
+                        value = editOfficeName,
+                        onValueChange = { editOfficeName = it },
+                        label = { Text("🏢 ชื่อ ปจ./ปณ. (ชื่อที่ทำการ)") },
+                        placeholder = { Text("เช่น ปณ.เมืองขอนแก่น") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFF1D1B20),
+                            unfocusedTextColor = Color(0xFF1D1B20)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = editProvinceGroup,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("📍 ชื่อ กลุ่ม ปจ. (กลุ่มจังหวัด)") },
+                            trailingIcon = {
+                                IconButton(onClick = { editProvinceDropdownExpanded = true }) {
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                }
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color(0xFF1D1B20),
+                                unfocusedTextColor = Color(0xFF1D1B20)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clickable { editProvinceDropdownExpanded = true }
+                        )
+                        DropdownMenu(
+                            expanded = editProvinceDropdownExpanded,
+                            onDismissRequest = { editProvinceDropdownExpanded = false }
+                        ) {
+                            provinceList.forEach { province ->
+                                DropdownMenuItem(
+                                    text = { Text(province, color = Color(0xFF1D1B20)) },
+                                    onClick = {
+                                        editProvinceGroup = province
+                                        editProvinceDropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
 
                     OutlinedTextField(
                         value = editName,
@@ -663,7 +738,9 @@ fun AdminUserManagementScreen(viewModel: TrackingViewModel) {
                             name = editName,
                             licensePlate = editLicensePlate,
                             modelYear = editModelYear,
-                            driverName = editDriverName
+                            driverName = editDriverName,
+                            officeName = editOfficeName,
+                            provinceGroup = editProvinceGroup
                         )
                         vehicleToEdit = null
                         Toast.makeText(context, "อัปเดตไปยังหน้า User และ Google Sheets เรียบร้อย!", Toast.LENGTH_SHORT).show()
@@ -717,8 +794,8 @@ fun AdminUserManagementScreen(viewModel: TrackingViewModel) {
     if (showAddVehicleDialog) {
         com.example.ui.screens.AddVehicleDialog(
             onDismiss = { showAddVehicleDialog = false },
-            onAdd = { name, plate, model, driver ->
-                viewModel.addNewVehicle(name, plate, model, driver)
+            onAdd = { name, plate, model, driver, office, provinceGroup ->
+                viewModel.addNewVehicle(name, plate, model, driver, office, provinceGroup)
                 showAddVehicleDialog = false
                 Toast.makeText(context, "เพิ่มยานพาหนะ $plate ($driver) เรียบร้อย!", Toast.LENGTH_SHORT).show()
             }

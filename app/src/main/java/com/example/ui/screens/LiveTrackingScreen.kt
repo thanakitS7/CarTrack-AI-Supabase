@@ -83,11 +83,14 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -513,8 +516,8 @@ fun LiveTrackingScreen(
         if (showAddVehicleDialog) {
             AddVehicleDialog(
                 onDismiss = { showAddVehicleDialog = false },
-                onAdd = { name, plate, model, driver ->
-                    viewModel.addNewVehicle(name, plate, model, driver)
+                onAdd = { name, plate, model, driver, office, provinceGroup ->
+                    viewModel.addNewVehicle(name, plate, model, driver, office, provinceGroup)
                     showAddVehicleDialog = false
                     Toast.makeText(context, "เพิ่มยานพาหนะ $plate เรียบร้อย!", Toast.LENGTH_SHORT).show()
                 }
@@ -1386,12 +1389,26 @@ fun StatusChip(status: String, isLocked: Boolean) {
 @Composable
 fun AddVehicleDialog(
     onDismiss: () -> Unit,
-    onAdd: (name: String, licensePlate: String, modelYear: String, driverName: String) -> Unit
+    onAdd: (name: String, licensePlate: String, modelYear: String, driverName: String, officeName: String, provinceGroup: String) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var licensePlate by remember { mutableStateOf("") }
     var modelYear by remember { mutableStateOf("") }
     var driverName by remember { mutableStateOf("") }
+    var officeName by remember { mutableStateOf("") }
+    var provinceGroup by remember { mutableStateOf("ขอนแก่น") }
+    var provinceDropdownExpanded by remember { mutableStateOf(false) }
+
+    val provinceList = listOf(
+        "บึงกาฬ",
+        "หนองบัวลำภู",
+        "ขอนแก่น",
+        "อุดรธานี",
+        "เลย",
+        "หนองคาย",
+        "มหาสารคาม",
+        "กาฬสินธุ์"
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1446,6 +1463,61 @@ fun AddVehicleDialog(
                 )
 
                 OutlinedTextField(
+                    value = officeName,
+                    onValueChange = { officeName = it },
+                    label = { Text("🏢 ชื่อ ปจ./ปณ. (ชื่อที่ทำการ)") },
+                    placeholder = { Text("เช่น ปณ.เมืองขอนแก่น, ปจ.หนองคาย") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color(0xFF1D1B20),
+                        unfocusedTextColor = Color(0xFF1D1B20),
+                        focusedBorderColor = Color(0xFF6750A4),
+                        unfocusedBorderColor = Color(0xFFCAC4D0)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Province Group Dropdown
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = provinceGroup,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("📍 ชื่อ กลุ่ม ปจ. (กลุ่มจังหวัด)") },
+                        trailingIcon = {
+                            IconButton(onClick = { provinceDropdownExpanded = true }) {
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = "Select Province Group")
+                            }
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color(0xFF1D1B20),
+                            unfocusedTextColor = Color(0xFF1D1B20),
+                            focusedBorderColor = Color(0xFF6750A4),
+                            unfocusedBorderColor = Color(0xFFCAC4D0)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clickable { provinceDropdownExpanded = true }
+                    )
+                    DropdownMenu(
+                        expanded = provinceDropdownExpanded,
+                        onDismissRequest = { provinceDropdownExpanded = false }
+                    ) {
+                        provinceList.forEach { province ->
+                            DropdownMenuItem(
+                                text = { Text(province, color = Color(0xFF1D1B20)) },
+                                onClick = {
+                                    provinceGroup = province
+                                    provinceDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                OutlinedTextField(
                     value = modelYear,
                     onValueChange = { modelYear = it },
                     label = { Text("รุ่น/ปี (เช่น Isuzu D-Max 2024)") },
@@ -1465,7 +1537,8 @@ fun AddVehicleDialog(
                     if (licensePlate.isNotBlank()) {
                         val finalName = name.ifBlank { "รถขนส่ง $licensePlate" }
                         val finalDriver = driverName.ifBlank { "สมชาย ใจดี (คนขับ)" }
-                        onAdd(finalName, licensePlate, modelYear, finalDriver)
+                        val finalOffice = officeName.ifBlank { "ปณ.เมืองขอนแก่น" }
+                        onAdd(finalName, licensePlate, modelYear, finalDriver, finalOffice, provinceGroup)
                     }
                 },
                 enabled = licensePlate.isNotBlank(),

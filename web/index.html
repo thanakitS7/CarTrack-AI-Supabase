@@ -58,6 +58,12 @@
                 <span id="lastUpdated" class="text-slate-400 font-mono text-[11px] ml-1">--:--:--</span>
             </div>
 
+            <!-- Daily Usage Search & Report Button -->
+            <button onclick="openDailyReportModal()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition shadow-lg shadow-emerald-600/20">
+                <i class="fa-solid fa-calendar-check"></i>
+                <span>ค้นหารถตามวันที่ & รายงาน</span>
+            </button>
+
             <!-- Admin Button (Navigates to admin.html) -->
             <a href="admin.html" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition shadow-lg shadow-indigo-600/20">
                 <i class="fa-solid fa-user-gear"></i>
@@ -207,6 +213,107 @@
                             <tbody id="historyTableBody" class="divide-y divide-slate-800">
                                 <tr>
                                     <td colspan="4" class="p-6 text-center text-slate-500">ไม่มีข้อมูลประวัติ</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Daily Fleet Usage Search & Report Modal -->
+    <div id="dailyReportModal" class="hidden fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4">
+        <div class="bg-slate-800 border border-slate-700 w-full max-w-5xl h-[92vh] rounded-2xl flex flex-col shadow-2xl overflow-hidden">
+            <!-- Modal Header -->
+            <div class="bg-slate-900 border-b border-slate-700 p-4 flex items-center justify-between shrink-0">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xl">
+                        <i class="fa-solid fa-chart-line"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-slate-100 text-base">📊 ค้นหารายงานการใช้รถประจำวัน (Daily Fleet Report)</h3>
+                        <p class="text-xs text-slate-400">เลือกวันที่เพื่อค้นหาจำนวนรถที่ใช้งาน รายงานการวิ่ง และระยะทาง (กม.) แต่ละคัน</p>
+                    </div>
+                </div>
+                <button onclick="toggleDailyReportModal(false)" class="text-slate-400 hover:text-white text-xl p-1"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <!-- Modal Content Body -->
+            <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                <!-- Date Filter & Search Controls -->
+                <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex flex-wrap items-center gap-3">
+                        <div>
+                            <label class="block text-[11px] text-slate-400 mb-1 font-medium"><i class="fa-solid fa-calendar-day text-emerald-400 mr-1"></i>เลือกวันที่ค้นหา</label>
+                            <input type="date" id="reportDateInput" onchange="fetchDailyReportData()" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-emerald-500">
+                        </div>
+
+                        <div>
+                            <label class="block text-[11px] text-slate-400 mb-1 font-medium"><i class="fa-solid fa-filter text-sky-400 mr-1"></i>กลุ่ม ปจ. (กลุ่มจังหวัด)</label>
+                            <select id="reportProvinceFilter" onchange="renderDailyReportUI()" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-emerald-500">
+                                <option value="ALL">-- แสดงทุกกลุ่มจังหวัด (8 จังหวัด) --</option>
+                                <option value="บึงกาฬ">บึงกาฬ</option>
+                                <option value="หนองบัวลำภู">หนองบัวลำภู</option>
+                                <option value="ขอนแก่น">ขอนแก่น</option>
+                                <option value="อุดรธานี">อุดรธานี</option>
+                                <option value="เลย">เลย</option>
+                                <option value="หนองคาย">หนองคาย</option>
+                                <option value="มหาสารคาม">มหาสารคาม</option>
+                                <option value="กาฬสินธุ์">กาฬสินธุ์</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button onclick="fetchDailyReportData()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center space-x-1.5 transition">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <span>ค้นหารายงาน</span>
+                    </button>
+                </div>
+
+                <!-- Summary KPI Cards -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div class="bg-slate-900 p-3.5 rounded-xl border border-slate-700">
+                        <span class="text-[11px] text-slate-400 block mb-0.5"><i class="fa-solid fa-truck text-emerald-400 mr-1"></i>รถที่ใช้งานในวันที่เลือก</span>
+                        <strong class="text-emerald-400 text-xl" id="reportActiveCount">0 คัน</strong>
+                    </div>
+                    <div class="bg-slate-900 p-3.5 rounded-xl border border-slate-700">
+                        <span class="text-[11px] text-slate-400 block mb-0.5"><i class="fa-solid fa-route text-sky-400 mr-1"></i>ระยะทางวิ่งรวมทุกคัน</span>
+                        <strong class="text-sky-400 text-xl" id="reportTotalFleetKm">0.0 กม.</strong>
+                    </div>
+                    <div class="bg-slate-900 p-3.5 rounded-xl border border-slate-700">
+                        <span class="text-[11px] text-slate-400 block mb-0.5"><i class="fa-solid fa-building text-amber-400 mr-1"></i>จำนวน ปจ./ปณ. ที่ใช้งาน</span>
+                        <strong class="text-amber-400 text-xl" id="reportOfficeCount">0 แห่ง</strong>
+                    </div>
+                    <div class="bg-slate-900 p-3.5 rounded-xl border border-slate-700">
+                        <span class="text-[11px] text-slate-400 block mb-0.5"><i class="fa-solid fa-location-dot text-indigo-400 mr-1"></i>จำนวนจุด GPS รวม</span>
+                        <strong class="text-indigo-400 text-xl" id="reportTotalGpsPoints">0 จุด</strong>
+                    </div>
+                </div>
+
+                <!-- Report Details Table -->
+                <div class="bg-slate-900 rounded-xl border border-slate-700 overflow-hidden">
+                    <div class="p-3 bg-slate-800/80 border-b border-slate-700 font-semibold text-xs text-slate-200 flex items-center justify-between">
+                        <span><i class="fa-solid fa-list-check text-emerald-400 mr-1.5"></i>รายงานสรุปการใช้รถประจำวันและเส้นทางวิ่ง</span>
+                        <span id="reportDateBadge" class="text-[11px] text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800 font-mono">--/--/----</span>
+                    </div>
+
+                    <div class="max-h-96 overflow-y-auto">
+                        <table class="w-full text-left text-xs text-slate-300">
+                            <thead class="bg-slate-800 text-slate-400 font-medium border-b border-slate-700 sticky top-0">
+                                <tr>
+                                    <th class="p-3">ทะเบียน / ชื่อรถ</th>
+                                    <th class="p-3">คนขับ</th>
+                                    <th class="p-3">ชื่อ ปจ./ปณ. (ที่ทำการ)</th>
+                                    <th class="p-3">กลุ่ม ปจ.</th>
+                                    <th class="p-3">ระยะทางวิ่งวันนี้</th>
+                                    <th class="p-3">ความเร็วสูงสุด</th>
+                                    <th class="p-3 text-center">ดูเส้นทาง</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dailyReportTableBody" class="divide-y divide-slate-800">
+                                <tr>
+                                    <td colspan="7" class="p-8 text-center text-slate-500">กรุณากดปุ่มค้นหาเพื่อแสดงรายงาน</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -388,7 +495,9 @@
                         <div class="grid grid-cols-2 gap-2 mt-2 text-[11px] text-slate-300 bg-slate-800/50 p-2 rounded-lg cursor-pointer" onclick="selectVehicle('${v.vehicle_id}')">
                             <div><i class="fa-solid fa-gauge text-amber-400 mr-1"></i>ความเร็ว: <strong class="text-white">${v.speed_kmh || 0} km/h</strong></div>
                             <div><i class="fa-solid fa-user-gear text-indigo-400 mr-1"></i>คนขับ: <span class="text-slate-200">${v.driver_name || '-'}</span></div>
-                            <div class="col-span-2 text-sky-400 font-medium">
+                            <div><i class="fa-solid fa-building text-emerald-400 mr-1"></i>ที่ทำการ: <span class="text-slate-200">${v.office_name || '-'}</span></div>
+                            <div><i class="fa-solid fa-map-location-dot text-indigo-400 mr-1"></i>กลุ่ม ปจ.: <span class="text-slate-200">${v.province_group || '-'}</span></div>
+                            <div class="col-span-2 text-sky-400 font-medium pt-0.5 border-t border-slate-700/50">
                                 <i class="fa-solid fa-route text-sky-400 mr-1"></i>ระยะทางวันนี้: <strong class="text-white">${distanceKm} กม.</strong>
                             </div>
                         </div>
@@ -619,6 +728,137 @@
                 modal.classList.add("hidden");
                 pausePlayback();
             }
+        }
+
+        // --- Daily Fleet Usage Search & Reporting Logic ---
+        let dailyReportRawData = [];
+
+        function openDailyReportModal() {
+            const dateInput = document.getElementById("reportDateInput");
+            if (!dateInput.value) {
+                const today = new Date().toISOString().split('T')[0];
+                dateInput.value = today;
+            }
+            toggleDailyReportModal(true);
+            fetchDailyReportData();
+        }
+
+        function toggleDailyReportModal(show) {
+            const modal = document.getElementById("dailyReportModal");
+            if (show === undefined) {
+                modal.classList.toggle("hidden");
+            } else if (show) {
+                modal.classList.remove("hidden");
+            } else {
+                modal.classList.add("hidden");
+            }
+        }
+
+        async function fetchDailyReportData() {
+            const selectedDate = document.getElementById("reportDateInput").value;
+            const tableBody = document.getElementById("dailyReportTableBody");
+            
+            if (!selectedDate) return;
+
+            tableBody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-500"><i class="fa-solid fa-spinner fa-spin text-2xl text-emerald-400 mb-2"></i><p>กำลังค้นหาข้อมูลประวัติเส้นทางวันที่ ${selectedDate}...</p></td></tr>`;
+            document.getElementById("reportDateBadge").innerText = selectedDate;
+
+            try {
+                const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
+                const startIso = `${selectedDate}T00:00:00.000Z`;
+                const endIso = `${selectedDate}T23:59:59.999Z`;
+
+                // Query telemetry history for selected date
+                const res = await fetch(`${cleanedUrl}/rest/v1/telemetry_history?created_at=gte.${startIso}&created_at=lte.${endIso}&order=created_at.asc`, {
+                    headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+                });
+
+                if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
+
+                const historyRecords = await res.json();
+
+                // Group points by vehicle_id
+                const grouped = {};
+                historyRecords.forEach(rec => {
+                    const vid = rec.vehicle_id;
+                    if (!grouped[vid]) grouped[vid] = [];
+                    grouped[vid].push(rec);
+                });
+
+                // Match with vehiclesData metadata
+                dailyReportRawData = vehiclesData.map(v => {
+                    const points = grouped[v.vehicle_id] || [];
+                    const distanceKm = calculateTodayDistanceKm(points);
+                    const maxSpeed = points.length > 0 ? Math.max(...points.map(p => p.speed_kmh || 0)) : 0;
+                    return {
+                        vehicle_id: v.vehicle_id,
+                        vehicle_name: v.vehicle_name || v.vehicle_id,
+                        license_plate: v.license_plate || '-',
+                        driver_name: v.driver_name || '-',
+                        office_name: v.office_name || '-',
+                        province_group: v.province_group || '-',
+                        points_count: points.length,
+                        distance_km: distanceKm,
+                        max_speed: maxSpeed,
+                        points: points,
+                        is_active: points.length > 0
+                    };
+                });
+
+                renderDailyReportUI();
+            } catch (err) {
+                console.error("Fetch daily report error:", err);
+                tableBody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-rose-400 bg-rose-950/40">เกิดข้อผิดพลาดในการโหลดรายงาน: ${err.message}</td></tr>`;
+            }
+        }
+
+        function renderDailyReportUI() {
+            const filterProv = document.getElementById("reportProvinceFilter").value;
+            const tableBody = document.getElementById("dailyReportTableBody");
+
+            let items = dailyReportRawData;
+            if (filterProv !== "ALL") {
+                items = items.filter(i => (i.province_group || '').trim() === filterProv.trim());
+            }
+
+            const activeVehicles = items.filter(i => i.is_active);
+            const totalFleetKm = items.reduce((sum, i) => sum + i.distance_km, 0);
+            const totalGpsPoints = items.reduce((sum, i) => sum + i.points_count, 0);
+            const uniqueOffices = new Set(items.filter(i => i.office_name && i.office_name !== '-').map(i => i.office_name)).size;
+
+            document.getElementById("reportActiveCount").innerText = `${activeVehicles.length} คัน`;
+            document.getElementById("reportTotalFleetKm").innerText = `${totalFleetKm.toFixed(1)} กม.`;
+            document.getElementById("reportOfficeCount").innerText = `${uniqueOffices} แห่ง`;
+            document.getElementById("reportTotalGpsPoints").innerText = `${totalGpsPoints} จุด`;
+
+            if (items.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-500">ไม่พบข้อมูลรายงานรถในกลุ่มจังหวัดที่เลือก</td></tr>`;
+                return;
+            }
+
+            tableBody.innerHTML = items.map(item => `
+                <tr class="hover:bg-slate-800/60 transition">
+                    <td class="p-3">
+                        <div class="font-bold text-slate-100 text-sm">${item.vehicle_name}</div>
+                        <div class="text-[11px] text-slate-400 font-mono">ทะเบียน: ${item.license_plate}</div>
+                    </td>
+                    <td class="p-3 text-slate-200">${item.driver_name}</td>
+                    <td class="p-3 text-slate-300">🏢 ${item.office_name}</td>
+                    <td class="p-3 text-sky-400 font-medium">📍 ${item.province_group}</td>
+                    <td class="p-3 font-bold text-emerald-400 text-sm">
+                        ${item.distance_km.toFixed(1)} กม.
+                        <div class="text-[10px] text-slate-500 font-normal">(${item.points_count} จุด GPS)</div>
+                    </td>
+                    <td class="p-3 text-amber-400 font-semibold">${item.max_speed} km/h</td>
+                    <td class="p-3 text-center">
+                        <button onclick="toggleDailyReportModal(false); openVehicleHistoryModal('${item.vehicle_id}')" 
+                                class="bg-sky-600/20 hover:bg-sky-600/40 text-sky-400 border border-sky-500/30 px-3 py-1 rounded-lg text-xs font-medium transition inline-flex items-center space-x-1">
+                            <i class="fa-solid fa-map"></i>
+                            <span>เปิดแผนที่</span>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
         }
 
         function filterVehicles() {
