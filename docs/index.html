@@ -58,21 +58,16 @@
                 <span id="lastUpdated" class="text-slate-400 font-mono text-[11px] ml-1">--:--:--</span>
             </div>
 
-            <!-- Admin Button -->
-            <button onclick="toggleAdminModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition">
+            <!-- Admin Button (Navigates to admin.html) -->
+            <a href="admin.html" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition shadow-lg shadow-indigo-600/20">
                 <i class="fa-solid fa-user-gear"></i>
-                <span>จัดการผู้ใช้/รถ (Admin)</span>
-            </button>
+                <span>หน้า Admin / ตั้งค่า</span>
+            </a>
 
             <!-- Refresh Button -->
             <button onclick="fetchVehiclesData()" class="bg-sky-600 hover:bg-sky-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition">
                 <i class="fa-solid fa-rotate"></i>
                 <span class="hidden sm:inline">รีเฟรช</span>
-            </button>
-
-            <!-- Settings Button -->
-            <button onclick="toggleSettingsModal()" class="bg-slate-700 hover:bg-slate-600 text-slate-200 p-2 rounded-lg text-xs transition">
-                <i class="fa-solid fa-gear text-sm"></i>
             </button>
         </div>
     </header>
@@ -221,67 +216,13 @@
         </div>
     </div>
 
-    <!-- Admin User / Vehicle Management Modal -->
-    <div id="adminModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div class="bg-slate-800 border border-slate-700 w-full max-w-2xl rounded-2xl p-5 shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
-            <div class="flex items-center justify-between border-b border-slate-700 pb-3 shrink-0">
-                <h3 class="font-bold text-slate-100 text-base flex items-center">
-                    <i class="fa-solid fa-user-gear text-indigo-400 mr-2 text-lg"></i>
-                    จัดการข้อมูลผู้ใช้รถและยานพาหนะ (Admin Panel)
-                </h3>
-                <button onclick="toggleAdminModal()" class="text-slate-400 hover:text-white text-xl"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-
-            <div class="flex-1 overflow-y-auto space-y-4 pr-1">
-                <p class="text-xs text-slate-400">แก้ไขชื่อผู้ขับขี่ ชื่อรถ และเลขทะเบียน เพื่ออัปเดตตรงไปยังฐานข้อมูล Supabase Cloud</p>
-
-                <div id="adminVehicleList" class="space-y-3">
-                    <!-- Dynamic Admin Vehicle Rows -->
-                </div>
-            </div>
-
-            <div class="flex justify-end pt-3 border-t border-slate-700 shrink-0">
-                <button onclick="toggleAdminModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-medium">ปิด</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Settings Modal -->
-    <div id="settingsModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div class="bg-slate-800 border border-slate-700 w-full max-w-md rounded-2xl p-5 shadow-2xl space-y-4">
-            <div class="flex items-center justify-between border-b border-slate-700 pb-3">
-                <h3 class="font-bold text-slate-100 text-base"><i class="fa-solid fa-gear text-sky-400 mr-2"></i>ตั้งค่าการเชื่อมต่อ Supabase</h3>
-                <button onclick="toggleSettingsModal()" class="text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-
-            <div class="space-y-3 text-xs">
-                <div>
-                    <label class="block text-slate-300 mb-1 font-medium">Supabase URL</label>
-                    <input type="text" id="supabaseUrlInput" class="w-full p-2.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-sky-500 font-mono text-xs">
-                </div>
-                <div>
-                    <label class="block text-slate-300 mb-1 font-medium">Supabase Anon Key</label>
-                    <textarea id="supabaseKeyInput" rows="3" class="w-full p-2.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-sky-500 font-mono text-[11px]"></textarea>
-                </div>
-            </div>
-
-            <div class="flex justify-end space-x-2 pt-2 border-t border-slate-700">
-                <button onclick="toggleSettingsModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-medium">ยกเลิก</button>
-                <button onclick="saveSettings()" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-medium">บันทึกและเชื่อมต่อ</button>
-            </div>
-        </div>
-    </div>
-
     <!-- JavaScript Application Logic -->
     <script>
-        let DEFAULT_SUPABASE_URL = "https://rhzglphlfzhautvwpnae.supabase.co";
-        let DEFAULT_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJoemdscGhsZnpoYXV0dndwbmFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4OTQzNDUsImV4cCI6MjEwMTQ3MDM0NX0.JMx8DvXgES0x9N7YmjW2n_7mgMYm_bgAkv39xb_Q2Jo";
+        const DEFAULT_SUPABASE_URL = "https://rhzglphlfzhautvwpnae.supabase.co";
+        const DEFAULT_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJoemdscGhsZnpoYXV0dndwbmFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4OTQzNDUsImV4cCI6MjEwMTQ3MDM0NX0.JMx8DvXgES0x9N7YmjW2n_7mgMYm_bgAkv39xb_Q2Jo";
 
         let supabaseUrl = localStorage.getItem("sp_url") || DEFAULT_SUPABASE_URL;
         let supabaseKey = localStorage.getItem("sp_key") || DEFAULT_ANON_KEY;
-
-        document.getElementById("supabaseUrlInput").value = supabaseUrl;
-        document.getElementById("supabaseKeyInput").value = supabaseKey;
 
         // Initialize Leaflet Map centered on Thailand
         const map = L.map('map').setView([15.8700, 100.9925], 6);
@@ -398,8 +339,6 @@
                 }
 
                 updateUI(vehiclesData);
-                renderAdminVehicleList();
-
                 document.getElementById("lastUpdated").innerText = new Date().toLocaleTimeString('th-TH');
             } catch (err) {
                 console.error("Fetch vehicles error:", err);
@@ -682,106 +621,8 @@
             }
         }
 
-        // --- Admin Vehicle & User Management ---
-        function renderAdminVehicleList() {
-            const listEl = document.getElementById("adminVehicleList");
-            if (!vehiclesData || vehiclesData.length === 0) {
-                listEl.innerHTML = `<div class="text-center py-6 text-slate-500 text-xs">ไม่มีข้อมูลรถให้แก้ไข</div>`;
-                return;
-            }
-
-            listEl.innerHTML = vehiclesData.map((v, idx) => `
-                <div class="bg-slate-900 border border-slate-700 p-4 rounded-xl space-y-3">
-                    <div class="flex items-center justify-between border-b border-slate-800 pb-2">
-                        <div class="flex items-center space-x-2">
-                            <i class="fa-solid fa-car text-sky-400"></i>
-                            <span class="font-bold text-slate-100 text-sm">คันที่ ${idx + 1}: ${v.vehicle_id}</span>
-                        </div>
-                        <span class="text-xs text-slate-400">ID: ${v.vehicle_id}</span>
-                    </div>
-
-                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                        <div>
-                            <label class="block text-slate-400 mb-1">ชื่อรถ (Vehicle Name)</label>
-                            <input type="text" id="admin-name-${v.vehicle_id}" value="${v.vehicle_name || ''}" 
-                                   class="w-full p-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 focus:border-indigo-500 focus:outline-none">
-                        </div>
-                        <div>
-                            <label class="block text-slate-400 mb-1">ทะเบียนรถ (Plate)</label>
-                            <input type="text" id="admin-plate-${v.vehicle_id}" value="${v.license_plate || ''}" 
-                                   class="w-full p-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 focus:border-indigo-500 focus:outline-none">
-                        </div>
-                        <div>
-                            <label class="block text-slate-400 mb-1">ชื่อคนขับ (Driver User)</label>
-                            <input type="text" id="admin-driver-${v.vehicle_id}" value="${v.driver_name || ''}" 
-                                   class="w-full p-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 focus:border-indigo-500 focus:outline-none">
-                        </div>
-                    </div>
-
-                    <div class="flex justify-end pt-1">
-                        <button onclick="saveVehicleAdmin('${v.vehicle_id}')" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition">
-                            <i class="fa-solid fa-floppy-disk"></i>
-                            <span>บันทึกการแก้ไข</span>
-                        </button>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        async function saveVehicleAdmin(vehicleId) {
-            const vName = document.getElementById(`admin-name-${vehicleId}`).value.trim();
-            const plate = document.getElementById(`admin-plate-${vehicleId}`).value.trim();
-            const driver = document.getElementById(`admin-driver-${vehicleId}`).value.trim();
-
-            try {
-                const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
-                const res = await fetch(`${cleanedUrl}/rest/v1/vehicles?vehicle_id=eq.${vehicleId}`, {
-                    method: 'PATCH',
-                    headers: {
-                        'apikey': supabaseKey,
-                        'Authorization': `Bearer ${supabaseKey}`,
-                        'Content-Type': 'application/json',
-                        'Prefer': 'return=minimal'
-                    },
-                    body: JSON.stringify({
-                        vehicle_name: vName,
-                        license_plate: plate,
-                        driver_name: driver
-                    })
-                });
-
-                if (res.ok) {
-                    alert(`บันทึกข้อมูลรถ ${vehicleId} เรียบร้อยแล้ว!`);
-                    fetchVehiclesData();
-                } else {
-                    alert(`ไม่สามารถบันทึกข้อมูลได้ (HTTP ${res.status})`);
-                }
-            } catch (err) {
-                console.error("Save admin error:", err);
-                alert("เกิดข้อผิดพลาดในการเชื่อมต่อ Supabase");
-            }
-        }
-
-        function toggleAdminModal() {
-            renderAdminVehicleList();
-            document.getElementById("adminModal").classList.toggle("hidden");
-        }
-
         function filterVehicles() {
             updateUI(vehiclesData);
-        }
-
-        function toggleSettingsModal() {
-            document.getElementById("settingsModal").classList.toggle("hidden");
-        }
-
-        function saveSettings() {
-            supabaseUrl = document.getElementById("supabaseUrlInput").value;
-            supabaseKey = document.getElementById("supabaseKeyInput").value;
-            localStorage.setItem("sp_url", supabaseUrl);
-            localStorage.setItem("sp_key", supabaseKey);
-            toggleSettingsModal();
-            fetchVehiclesData();
         }
 
         // Initial Load & Auto Poll every 4 seconds
