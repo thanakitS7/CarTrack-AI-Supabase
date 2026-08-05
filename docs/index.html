@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CarTrack AI - Live Fleet Tracking Dashboard</title>
+    <title>CarTrack AI - Live Fleet & History Dashboard</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Leaflet CSS & JS -->
@@ -47,22 +47,30 @@
             </div>
             <div>
                 <h1 class="font-bold text-lg leading-none text-white tracking-wide">CarTrack AI <span class="text-xs font-normal text-sky-400 bg-sky-950/80 px-2 py-0.5 rounded-full border border-sky-500/30">Fleet Web</span></h1>
-                <p class="text-xs text-slate-400">ระบบติดตามยานพาหนะเรียลไทม์ (Supabase Cloud Sync)</p>
+                <p class="text-xs text-slate-400">ระบบติดตามยานพาหนะและประวัติเส้นทางเรียลไทม์</p>
             </div>
         </div>
 
-        <div class="flex items-center space-x-3">
+        <div class="flex items-center space-x-2 md:space-x-3">
             <div id="syncStatus" class="hidden md:flex items-center space-x-2 text-xs bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-700">
                 <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
-                <span class="text-emerald-400 font-medium">กำลังเชื่อมต่อ Supabase สด</span>
+                <span class="text-emerald-400 font-medium">เชื่อมต่อ Supabase สด</span>
                 <span id="lastUpdated" class="text-slate-400 font-mono text-[11px] ml-1">--:--:--</span>
             </div>
 
-            <button onclick="fetchVehiclesData()" class="bg-sky-600 hover:bg-sky-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition">
-                <i class="fa-solid fa-rotate"></i>
-                <span>รีเฟรช</span>
+            <!-- Admin Button -->
+            <button onclick="toggleAdminModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition">
+                <i class="fa-solid fa-user-gear"></i>
+                <span>จัดการผู้ใช้/รถ (Admin)</span>
             </button>
 
+            <!-- Refresh Button -->
+            <button onclick="fetchVehiclesData()" class="bg-sky-600 hover:bg-sky-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition">
+                <i class="fa-solid fa-rotate"></i>
+                <span class="hidden sm:inline">รีเฟรช</span>
+            </button>
+
+            <!-- Settings Button -->
             <button onclick="toggleSettingsModal()" class="bg-slate-700 hover:bg-slate-600 text-slate-200 p-2 rounded-lg text-xs transition">
                 <i class="fa-solid fa-gear text-sm"></i>
             </button>
@@ -120,6 +128,124 @@
 
     </div>
 
+    <!-- History Playback Modal -->
+    <div id="historyModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4">
+        <div class="bg-slate-800 border border-slate-700 w-full max-w-4xl h-[90vh] rounded-2xl flex flex-col shadow-2xl overflow-hidden">
+            <!-- Modal Header -->
+            <div class="bg-slate-900 border-b border-slate-700 p-4 flex items-center justify-between shrink-0">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center font-bold">
+                        <i class="fa-solid fa-clock-rotate-left text-lg"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-slate-100 text-base" id="historyModalTitle">ประวัติเส้นทางย้อนหลัง</h3>
+                        <p class="text-xs text-slate-400" id="historyModalSub">กำลังโหลดข้อมูลประวัติ...</p>
+                    </div>
+                </div>
+                <button onclick="toggleHistoryModal()" class="text-slate-400 hover:text-white text-xl p-1"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <!-- Modal Content -->
+            <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                <!-- Summary Stats Bar -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div class="bg-slate-900 p-3 rounded-xl border border-slate-700">
+                        <span class="text-[11px] text-slate-400 block mb-0.5"><i class="fa-solid fa-route text-sky-400 mr-1"></i>ระยะทางรวมวันนี้</span>
+                        <strong class="text-sky-400 text-lg" id="histTotalKm">0.0 กม.</strong>
+                    </div>
+                    <div class="bg-slate-900 p-3 rounded-xl border border-slate-700">
+                        <span class="text-[11px] text-slate-400 block mb-0.5"><i class="fa-solid fa-gauge text-amber-400 mr-1"></i>ความเร็วสูงสุด</span>
+                        <strong class="text-amber-400 text-lg" id="histMaxSpeed">0 km/h</strong>
+                    </div>
+                    <div class="bg-slate-900 p-3 rounded-xl border border-slate-700">
+                        <span class="text-[11px] text-slate-400 block mb-0.5"><i class="fa-solid fa-location-dot text-indigo-400 mr-1"></i>จุดบันทึกพิกัด</span>
+                        <strong class="text-indigo-400 text-lg" id="histPointCount">0 จุด</strong>
+                    </div>
+                    <div class="bg-slate-900 p-3 rounded-xl border border-slate-700">
+                        <span class="text-[11px] text-slate-400 block mb-0.5"><i class="fa-solid fa-business-time text-emerald-400 mr-1"></i>ช่วงเวลาวิ่ง</span>
+                        <strong class="text-emerald-400 text-sm" id="histTimeRange">--:-- - --:--</strong>
+                    </div>
+                </div>
+
+                <!-- Playback Player Control -->
+                <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 space-y-3">
+                    <div class="flex items-center justify-between text-xs text-slate-300">
+                        <span class="font-medium"><i class="fa-solid fa-circle-play text-sky-400 mr-1"></i>เครื่องเล่นเส้นทางย้อนหลัง (Playback Controls)</span>
+                        <span id="playbackCurrentTime" class="font-mono text-sky-400 font-bold">--:--:--</span>
+                    </div>
+
+                    <input type="range" id="playbackSlider" min="0" max="100" value="0" oninput="onPlaybackSliderChange(this.value)"
+                           class="w-full accent-sky-500 bg-slate-800 rounded-lg cursor-pointer">
+
+                    <div class="flex items-center justify-between pt-1">
+                        <div class="text-xs text-slate-400" id="playbackLocationText">
+                            <i class="fa-solid fa-map-pin text-rose-400 mr-1"></i>สถานที่: <span class="text-slate-200">กำลังโหลด...</span>
+                        </div>
+
+                        <div class="flex items-center space-x-2">
+                            <button onclick="resetPlayback()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs">
+                                <i class="fa-solid fa-backward-step"></i> Start
+                            </button>
+                            <button onclick="togglePlayback()" id="playPauseBtn" class="bg-sky-600 hover:bg-sky-500 text-white px-4 py-1.5 rounded-lg text-xs font-bold flex items-center space-x-1">
+                                <i class="fa-solid fa-play" id="playIcon"></i>
+                                <span id="playText">เล่น</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Timeline Log Table -->
+                <div class="bg-slate-900 rounded-xl border border-slate-700 overflow-hidden">
+                    <div class="p-3 bg-slate-800/80 border-b border-slate-700 font-semibold text-xs text-slate-200">
+                        <i class="fa-solid fa-list-ul text-sky-400 mr-1.5"></i>รายการบันทึกตำแหน่งย้อนหลัง
+                    </div>
+                    <div class="max-h-60 overflow-y-auto">
+                        <table class="w-full text-left text-xs text-slate-300">
+                            <thead class="bg-slate-800 text-slate-400 font-medium border-b border-slate-700 sticky top-0">
+                                <tr>
+                                    <th class="p-2.5">เวลา</th>
+                                    <th class="p-2.5">สถานที่ / ที่อยู่</th>
+                                    <th class="p-2.5">ความเร็ว</th>
+                                    <th class="p-2.5">สถานะ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyTableBody" class="divide-y divide-slate-800">
+                                <tr>
+                                    <td colspan="4" class="p-6 text-center text-slate-500">ไม่มีข้อมูลประวัติ</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin User / Vehicle Management Modal -->
+    <div id="adminModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-slate-700 w-full max-w-2xl rounded-2xl p-5 shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
+            <div class="flex items-center justify-between border-b border-slate-700 pb-3 shrink-0">
+                <h3 class="font-bold text-slate-100 text-base flex items-center">
+                    <i class="fa-solid fa-user-gear text-indigo-400 mr-2 text-lg"></i>
+                    จัดการข้อมูลผู้ใช้รถและยานพาหนะ (Admin Panel)
+                </h3>
+                <button onclick="toggleAdminModal()" class="text-slate-400 hover:text-white text-xl"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto space-y-4 pr-1">
+                <p class="text-xs text-slate-400">แก้ไขชื่อผู้ขับขี่ ชื่อรถ และเลขทะเบียน เพื่ออัปเดตตรงไปยังฐานข้อมูล Supabase Cloud</p>
+
+                <div id="adminVehicleList" class="space-y-3">
+                    <!-- Dynamic Admin Vehicle Rows -->
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-3 border-t border-slate-700 shrink-0">
+                <button onclick="toggleAdminModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-medium">ปิด</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Settings Modal -->
     <div id="settingsModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <div class="bg-slate-800 border border-slate-700 w-full max-w-md rounded-2xl p-5 shadow-2xl space-y-4">
@@ -167,9 +293,73 @@
 
         let vehicleMarkers = {};
         let vehiclesData = [];
+        let vehicleDistancesKm = {};
+        let vehicleLocationNames = {};
+        let placeNameCache = {};
         let selectedVehicleId = null;
-        let historyPolyline = null;
 
+        // Playback state variables
+        let currentHistoryPoints = [];
+        let currentHistoryIndex = 0;
+        let isPlaybackPlaying = false;
+        let playbackInterval = null;
+        let playbackMarker = null;
+        let mainPolyline = null;
+
+        // --- Distance Calculation Function (Haversine Formula) ---
+        function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Radius of the earth in km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        }
+
+        function calculateTodayDistanceKm(points) {
+            if (!points || points.length < 2) return 0.0;
+            let totalKm = 0.0;
+            for (let i = 1; i < points.length; i++) {
+                const p1 = points[i - 1];
+                const p2 = points[i];
+                if (p1.latitude && p1.longitude && p2.latitude && p2.longitude) {
+                    const dist = getDistanceFromLatLonInKm(p1.latitude, p1.longitude, p2.latitude, p2.longitude);
+                    if (dist < 50) { // filter out GPS jitter glitches
+                        totalKm += dist;
+                    }
+                }
+            }
+            return totalKm;
+        }
+
+        // --- Reverse Geocoding for Place Names ---
+        async function getPlaceName(lat, lng) {
+            if (!lat || !lng) return "ไม่ระบุตำแหน่ง";
+            const key = `${lat.toFixed(3)},${lng.toFixed(3)}`;
+            if (placeNameCache[key]) return placeNameCache[key];
+
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14&addressdetails=1`);
+                if (res.ok) {
+                    const data = await res.json();
+                    const addr = data.address || {};
+                    const place = addr.suburb || addr.town || addr.city || addr.district || addr.county || addr.state || data.display_name.split(',')[0];
+                    const province = addr.state || addr.province || '';
+                    const result = province && !place.includes(province) ? `${place}, ${province}` : place;
+                    placeNameCache[key] = result;
+                    return result;
+                }
+            } catch (e) {
+                console.warn("Reverse geocode error:", e);
+            }
+            const fallback = `พิกัด ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+            placeNameCache[key] = fallback;
+            return fallback;
+        }
+
+        // --- Fetch Vehicles & Telemetry from Supabase ---
         async function fetchVehiclesData() {
             try {
                 const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
@@ -183,7 +373,32 @@
                 if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
                 
                 vehiclesData = await res.json();
+
+                // Fetch telemetry history for each vehicle to calculate distance and location name
+                for (const v of vehiclesData) {
+                    if (v.vehicle_id) {
+                        try {
+                            const histRes = await fetch(`${cleanedUrl}/rest/v1/telemetry_history?vehicle_id=eq.${v.vehicle_id}&order=created_at.asc&limit=200`, {
+                                headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+                            });
+                            if (histRes.ok) {
+                                const hist = await histRes.json();
+                                vehicleDistancesKm[v.vehicle_id] = calculateTodayDistanceKm(hist);
+                            }
+                        } catch (e) {}
+                    }
+
+                    if (v.latitude && v.longitude) {
+                        getPlaceName(v.latitude, v.longitude).then(name => {
+                            vehicleLocationNames[v.vehicle_id] = name;
+                            const el = document.getElementById(`loc-name-${v.vehicle_id}`);
+                            if (el) el.innerText = name;
+                        });
+                    }
+                }
+
                 updateUI(vehiclesData);
+                renderAdminVehicleList();
 
                 document.getElementById("lastUpdated").innerText = new Date().toLocaleTimeString('th-TH');
             } catch (err) {
@@ -191,6 +406,7 @@
             }
         }
 
+        // --- Render Sidebar Vehicles List & Map Markers ---
         function updateUI(vehicles) {
             const listEl = document.getElementById("vehicleList");
             const searchVal = document.getElementById("searchInput").value.toLowerCase();
@@ -214,11 +430,12 @@
                 const isMoving = (v.status || '').includes("MOVING") || (v.speed_kmh || 0) > 3;
                 const statusColor = isMoving ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : "bg-amber-500/20 text-amber-400 border-amber-500/30";
                 const isSelected = selectedVehicleId === v.vehicle_id;
+                const distanceKm = (vehicleDistancesKm[v.vehicle_id] || 0.0).toFixed(1);
+                const placeName = vehicleLocationNames[v.vehicle_id] || `กำลังค้นหาสถานที่ (${(v.latitude || 0).toFixed(3)}, ${(v.longitude || 0).toFixed(3)})`;
 
                 return `
-                    <div onclick="selectVehicle('${v.vehicle_id}')" 
-                         class="p-3 rounded-xl border transition cursor-pointer ${isSelected ? 'bg-sky-950/80 border-sky-500' : 'bg-slate-900 border-slate-700/80 hover:border-slate-600'}">
-                        <div class="flex items-center justify-between mb-1.5">
+                    <div class="p-3 rounded-xl border transition ${isSelected ? 'bg-sky-950/80 border-sky-500' : 'bg-slate-900 border-slate-700/80 hover:border-slate-600'}">
+                        <div class="flex items-center justify-between mb-1.5 cursor-pointer" onclick="selectVehicle('${v.vehicle_id}')">
                             <div class="flex items-center space-x-2">
                                 <i class="fa-solid fa-car-side text-sky-400"></i>
                                 <span class="font-bold text-slate-100 text-sm">${v.vehicle_name || v.vehicle_id}</span>
@@ -229,22 +446,27 @@
                             </span>
                         </div>
 
-                        <div class="grid grid-cols-2 gap-2 mt-2 text-[11px] text-slate-300 bg-slate-800/50 p-2 rounded-lg">
+                        <div class="grid grid-cols-2 gap-2 mt-2 text-[11px] text-slate-300 bg-slate-800/50 p-2 rounded-lg cursor-pointer" onclick="selectVehicle('${v.vehicle_id}')">
                             <div><i class="fa-solid fa-gauge text-amber-400 mr-1"></i>ความเร็ว: <strong class="text-white">${v.speed_kmh || 0} km/h</strong></div>
                             <div><i class="fa-solid fa-user-gear text-indigo-400 mr-1"></i>คนขับ: <span class="text-slate-200">${v.driver_name || '-'}</span></div>
-                            <div><i class="fa-solid fa-gas-pump text-emerald-400 mr-1"></i>น้ำมัน: <span class="text-slate-200">${v.fuel_percent || 0}%</span></div>
-                            <div><i class="fa-solid fa-car-battery text-rose-400 mr-1"></i>แบต: <span class="text-slate-200">${v.battery_voltage || 12.6}V</span></div>
+                            <div class="col-span-2 text-sky-400 font-medium">
+                                <i class="fa-solid fa-route text-sky-400 mr-1"></i>ระยะทางวันนี้: <strong class="text-white">${distanceKm} กม.</strong>
+                            </div>
                         </div>
 
                         <div class="flex items-center justify-between mt-2 text-[10px] text-slate-400 pt-1.5 border-t border-slate-800">
-                            <span><i class="fa-solid fa-location-dot text-rose-400 mr-1"></i>${(v.latitude || 0).toFixed(4)}, ${(v.longitude || 0).toFixed(4)}</span>
-                            <span class="text-sky-400 hover:underline">ดูประวัติเส้นทาง &rarr;</span>
+                            <span class="truncate pr-2" title="${placeName}">
+                                <i class="fa-solid fa-location-dot text-rose-400 mr-1"></i><span id="loc-name-${v.vehicle_id}">${placeName}</span>
+                            </span>
+                            <button onclick="openVehicleHistoryModal('${v.vehicle_id}')" class="text-sky-400 hover:text-sky-300 font-semibold flex items-center shrink-0">
+                                <span>ดูประวัติ</span> <i class="fa-solid fa-chevron-right text-[9px] ml-1"></i>
+                            </button>
                         </div>
                     </div>
                 `;
             }).join('');
 
-            // Update Map Markers
+            // Update Leaflet Map Markers
             vehicles.forEach(v => {
                 if (!v.latitude || !v.longitude) return;
 
@@ -264,6 +486,8 @@
                     iconAnchor: [18, 18]
                 });
 
+                const placeName = vehicleLocationNames[v.vehicle_id] || `${v.latitude.toFixed(4)}, ${v.longitude.toFixed(4)}`;
+
                 if (vehicleMarkers[v.vehicle_id]) {
                     vehicleMarkers[v.vehicle_id].setLatLng([v.latitude, v.longitude]);
                     vehicleMarkers[v.vehicle_id].setIcon(customIcon);
@@ -274,7 +498,8 @@
                             <strong class="text-sm text-sky-600 font-bold">${v.vehicle_name || v.vehicle_id}</strong><br>
                             <span class="text-xs text-slate-600">ทะเบียน: ${v.license_plate || '-'}</span><br>
                             <span class="text-xs font-semibold text-emerald-600">ความเร็ว: ${v.speed_kmh || 0} km/h</span><br>
-                            <span class="text-[11px] text-slate-500">คนขับ: ${v.driver_name || '-'}</span>
+                            <span class="text-[11px] text-slate-500">คนขับ: ${v.driver_name || '-'}</span><br>
+                            <span class="text-[11px] text-indigo-600">สถานที่: ${placeName}</span>
                         </div>
                     `);
                     vehicleMarkers[v.vehicle_id] = marker;
@@ -282,7 +507,8 @@
             });
         }
 
-        async function selectVehicle(vehicleId) {
+        // --- Select Vehicle & Focus Map ---
+        function selectVehicle(vehicleId) {
             selectedVehicleId = vehicleId;
             const vehicle = vehiclesData.find(v => v.vehicle_id === vehicleId);
 
@@ -292,38 +518,253 @@
                     vehicleMarkers[vehicleId].openPopup();
                 }
             }
-
-            fetchVehicleHistory(vehicleId);
             updateUI(vehiclesData);
         }
 
-        async function fetchVehicleHistory(vehicleId) {
+        // --- History Modal & Playback Logic ---
+        async function openVehicleHistoryModal(vehicleId) {
+            selectedVehicleId = vehicleId;
+            const vehicle = vehiclesData.find(v => v.vehicle_id === vehicleId);
+
+            document.getElementById("historyModalTitle").innerText = `ประวัติเส้นทาง: ${vehicle?.vehicle_name || vehicleId} (${vehicle?.license_plate || '-'})`;
+            document.getElementById("historyModalSub").innerText = `คนขับ: ${vehicle?.driver_name || '-'} • ประจำวันนี้`;
+            
+            toggleHistoryModal(true);
+
+            // Fetch Telemetry History for this vehicle
             try {
                 const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
-                const res = await fetch(`${cleanedUrl}/rest/v1/telemetry_history?vehicle_id=eq.${vehicleId}&order=created_at.asc&limit=100`, {
-                    headers: {
-                        'apikey': supabaseKey,
-                        'Authorization': `Bearer ${supabaseKey}`
-                    }
+                const res = await fetch(`${cleanedUrl}/rest/v1/telemetry_history?vehicle_id=eq.${vehicleId}&order=created_at.asc&limit=200`, {
+                    headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
                 });
 
-                if (!res.ok) return;
-                const history = await res.json();
-
-                if (historyPolyline) map.removeLayer(historyPolyline);
-
-                if (history.length > 1) {
-                    const latLngs = history.map(h => [h.latitude, h.longitude]);
-                    historyPolyline = L.polyline(latLngs, {
-                        color: '#38BDF8',
-                        weight: 4,
-                        opacity: 0.8,
-                        dashArray: '8, 8'
-                    }).addTo(map);
+                if (res.ok) {
+                    currentHistoryPoints = await res.json();
+                    renderHistoryData(currentHistoryPoints);
                 }
             } catch (err) {
-                console.error("History fetch error:", err);
+                console.error("Fetch history error:", err);
             }
+        }
+
+        function renderHistoryData(points) {
+            const tableBody = document.getElementById("historyTableBody");
+            const slider = document.getElementById("playbackSlider");
+
+            if (!points || points.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="4" class="p-6 text-center text-slate-500">ไม่มีข้อมูลประวัติการเดินทางของคันนี้</td></tr>`;
+                document.getElementById("histTotalKm").innerText = "0.0 กม.";
+                document.getElementById("histMaxSpeed").innerText = "0 km/h";
+                document.getElementById("histPointCount").innerText = "0 จุด";
+                document.getElementById("histTimeRange").innerText = "--:-- - --:--";
+                return;
+            }
+
+            const totalKm = calculateTodayDistanceKm(points);
+            const maxSpd = Math.max(...points.map(p => p.speed_kmh || 0));
+            const startTime = points[0].created_at ? new Date(points[0].created_at).toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'}) : '--:--';
+            const endTime = points[points.length-1].created_at ? new Date(points[points.length-1].created_at).toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'}) : '--:--';
+
+            document.getElementById("histTotalKm").innerText = `${totalKm.toFixed(1)} กม.`;
+            document.getElementById("histMaxSpeed").innerText = `${maxSpd} km/h`;
+            document.getElementById("histPointCount").innerText = `${points.length} จุด`;
+            document.getElementById("histTimeRange").innerText = `${startTime} - ${endTime}`;
+
+            slider.max = points.length - 1;
+            slider.value = 0;
+            currentHistoryIndex = 0;
+
+            // Render History Table
+            tableBody.innerHTML = points.slice().reverse().map((p, idx) => {
+                const timeStr = p.created_at ? new Date(p.created_at).toLocaleTimeString('th-TH') : '--:--:--';
+                const isMoving = (p.status || '').includes("MOVING") || (p.speed_kmh || 0) > 3;
+                const statusBadge = isMoving ? `<span class="text-emerald-400">MOVING</span>` : `<span class="text-amber-400">IDLE</span>`;
+                const pName = placeNameCache[`${p.latitude.toFixed(3)},${p.longitude.toFixed(3)}`] || `${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}`;
+
+                return `
+                    <tr class="hover:bg-slate-800/60 cursor-pointer" onclick="jumpToPlaybackPoint(${points.length - 1 - idx})">
+                        <td class="p-2.5 font-mono text-sky-400">${timeStr}</td>
+                        <td class="p-2.5">${pName}</td>
+                        <td class="p-2.5 font-bold ${p.speed_kmh > 3 ? 'text-amber-400' : 'text-slate-400'}">${p.speed_kmh || 0} km/h</td>
+                        <td class="p-2.5">${statusBadge}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            // Draw Route Polyline on Leaflet Map
+            if (mainPolyline) map.removeLayer(mainPolyline);
+            const latLngs = points.map(p => [p.latitude, p.longitude]);
+            mainPolyline = L.polyline(latLngs, { color: '#38BDF8', weight: 4, opacity: 0.8 }).addTo(map);
+
+            if (latLngs.length > 0) {
+                map.fitBounds(mainPolyline.getBounds(), { padding: [50, 50] });
+            }
+
+            updatePlaybackFrame(0);
+        }
+
+        function updatePlaybackFrame(index) {
+            if (!currentHistoryPoints || currentHistoryPoints.length === 0) return;
+            currentHistoryIndex = Math.max(0, Math.min(index, currentHistoryPoints.length - 1));
+
+            const point = currentHistoryPoints[currentHistoryIndex];
+            document.getElementById("playbackSlider").value = currentHistoryIndex;
+            document.getElementById("playbackCurrentTime").innerText = point.created_at ? new Date(point.created_at).toLocaleTimeString('th-TH') : '--:--:--';
+
+            const place = placeNameCache[`${point.latitude.toFixed(3)},${point.longitude.toFixed(3)}`] || `${point.latitude.toFixed(4)}, ${point.longitude.toFixed(4)}`;
+            document.getElementById("playbackLocationText").innerHTML = `<i class="fa-solid fa-map-pin text-rose-400 mr-1"></i>สถานที่: <span class="text-slate-200">${place} (${point.speed_kmh || 0} km/h)</span>`;
+
+            // Move animated playback marker on map
+            if (playbackMarker) {
+                playbackMarker.setLatLng([point.latitude, point.longitude]);
+            } else {
+                const icon = L.divIcon({
+                    html: `<div class="w-8 h-8 rounded-full bg-rose-500 border-2 border-white flex items-center justify-center text-white text-xs font-bold shadow-lg"><i class="fa-solid fa-car"></i></div>`,
+                    iconSize: [32, 32],
+                    iconAnchor: [16, 16]
+                });
+                playbackMarker = L.marker([point.latitude, point.longitude], { icon }).addTo(map);
+            }
+        }
+
+        function onPlaybackSliderChange(val) {
+            updatePlaybackFrame(parseInt(val));
+        }
+
+        function jumpToPlaybackPoint(idx) {
+            updatePlaybackFrame(idx);
+        }
+
+        function togglePlayback() {
+            if (isPlaybackPlaying) {
+                pausePlayback();
+            } else {
+                startPlayback();
+            }
+        }
+
+        function startPlayback() {
+            if (!currentHistoryPoints || currentHistoryPoints.length === 0) return;
+            isPlaybackPlaying = true;
+            document.getElementById("playIcon").className = "fa-solid fa-pause";
+            document.getElementById("playText").innerText = "หยุดพัก";
+
+            playbackInterval = setInterval(() => {
+                if (currentHistoryIndex < currentHistoryPoints.length - 1) {
+                    updatePlaybackFrame(currentHistoryIndex + 1);
+                } else {
+                    pausePlayback();
+                }
+            }, 800);
+        }
+
+        function pausePlayback() {
+            isPlaybackPlaying = false;
+            if (playbackInterval) clearInterval(playbackInterval);
+            document.getElementById("playIcon").className = "fa-solid fa-play";
+            document.getElementById("playText").innerText = "เล่น";
+        }
+
+        function resetPlayback() {
+            pausePlayback();
+            updatePlaybackFrame(0);
+        }
+
+        function toggleHistoryModal(show) {
+            const modal = document.getElementById("historyModal");
+            if (show === undefined) {
+                modal.classList.toggle("hidden");
+            } else if (show) {
+                modal.classList.remove("hidden");
+            } else {
+                modal.classList.add("hidden");
+                pausePlayback();
+            }
+        }
+
+        // --- Admin Vehicle & User Management ---
+        function renderAdminVehicleList() {
+            const listEl = document.getElementById("adminVehicleList");
+            if (!vehiclesData || vehiclesData.length === 0) {
+                listEl.innerHTML = `<div class="text-center py-6 text-slate-500 text-xs">ไม่มีข้อมูลรถให้แก้ไข</div>`;
+                return;
+            }
+
+            listEl.innerHTML = vehiclesData.map((v, idx) => `
+                <div class="bg-slate-900 border border-slate-700 p-4 rounded-xl space-y-3">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                        <div class="flex items-center space-x-2">
+                            <i class="fa-solid fa-car text-sky-400"></i>
+                            <span class="font-bold text-slate-100 text-sm">คันที่ ${idx + 1}: ${v.vehicle_id}</span>
+                        </div>
+                        <span class="text-xs text-slate-400">ID: ${v.vehicle_id}</span>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                        <div>
+                            <label class="block text-slate-400 mb-1">ชื่อรถ (Vehicle Name)</label>
+                            <input type="text" id="admin-name-${v.vehicle_id}" value="${v.vehicle_name || ''}" 
+                                   class="w-full p-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 focus:border-indigo-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 mb-1">ทะเบียนรถ (Plate)</label>
+                            <input type="text" id="admin-plate-${v.vehicle_id}" value="${v.license_plate || ''}" 
+                                   class="w-full p-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 focus:border-indigo-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 mb-1">ชื่อคนขับ (Driver User)</label>
+                            <input type="text" id="admin-driver-${v.vehicle_id}" value="${v.driver_name || ''}" 
+                                   class="w-full p-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 focus:border-indigo-500 focus:outline-none">
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end pt-1">
+                        <button onclick="saveVehicleAdmin('${v.vehicle_id}')" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition">
+                            <i class="fa-solid fa-floppy-disk"></i>
+                            <span>บันทึกการแก้ไข</span>
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function saveVehicleAdmin(vehicleId) {
+            const vName = document.getElementById(`admin-name-${vehicleId}`).value.trim();
+            const plate = document.getElementById(`admin-plate-${vehicleId}`).value.trim();
+            const driver = document.getElementById(`admin-driver-${vehicleId}`).value.trim();
+
+            try {
+                const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
+                const res = await fetch(`${cleanedUrl}/rest/v1/vehicles?vehicle_id=eq.${vehicleId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'apikey': supabaseKey,
+                        'Authorization': `Bearer ${supabaseKey}`,
+                        'Content-Type': 'application/json',
+                        'Prefer': 'return=minimal'
+                    },
+                    body: JSON.stringify({
+                        vehicle_name: vName,
+                        license_plate: plate,
+                        driver_name: driver
+                    })
+                });
+
+                if (res.ok) {
+                    alert(`บันทึกข้อมูลรถ ${vehicleId} เรียบร้อยแล้ว!`);
+                    fetchVehiclesData();
+                } else {
+                    alert(`ไม่สามารถบันทึกข้อมูลได้ (HTTP ${res.status})`);
+                }
+            } catch (err) {
+                console.error("Save admin error:", err);
+                alert("เกิดข้อผิดพลาดในการเชื่อมต่อ Supabase");
+            }
+        }
+
+        function toggleAdminModal() {
+            renderAdminVehicleList();
+            document.getElementById("adminModal").classList.toggle("hidden");
         }
 
         function filterVehicles() {
@@ -343,9 +784,9 @@
             fetchVehiclesData();
         }
 
-        // Initial Load & Auto Poll every 3 seconds
+        // Initial Load & Auto Poll every 4 seconds
         fetchVehiclesData();
-        setInterval(fetchVehiclesData, 3000);
+        setInterval(fetchVehiclesData, 4000);
     </script>
 </body>
 </html>
