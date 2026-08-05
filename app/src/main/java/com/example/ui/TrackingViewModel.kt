@@ -836,9 +836,10 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
         val vehicle = activeVehicle.value ?: return
         viewModelScope.launch {
             _isSyncingInProcess.value = true
-            _lastSyncStatus.value = "กำลังส่งข้อมูลเข้า Google Sheets..."
-            val result = com.example.util.GoogleSheetsSyncManager.sendTelemetryToGoogleSheets(
-                webhookUrl = _googleSheetsUrl.value,
+            _lastSyncStatus.value = "กำลังส่งข้อมูลเข้า Supabase..."
+            val result = com.example.util.SupabaseSyncManager.sendTelemetryToSupabase(
+                baseUrl = com.example.util.SupabaseSyncManager.DEFAULT_SUPABASE_URL,
+                anonKey = com.example.util.SupabaseSyncManager.DEFAULT_ANON_KEY,
                 vehicleId = vehicle.id,
                 vehicleName = vehicle.name,
                 licensePlate = vehicle.licensePlate,
@@ -931,23 +932,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                                 fuelPercent = currentVeh.fuelPercent,
                                 batteryVoltage = currentVeh.batteryVoltage
                             )
-                            _lastSyncStatus.value = sbResult.getOrElse { " Supabase: ${it.message}" }
-                        }
-
-                        if (_isGoogleSheetsSyncEnabled.value) {
-                            val result = com.example.util.GoogleSheetsSyncManager.sendTelemetryToGoogleSheets(
-                                webhookUrl = _googleSheetsUrl.value,
-                                vehicleId = currentVeh.id,
-                                vehicleName = currentVeh.name,
-                                licensePlate = currentVeh.licensePlate,
-                                driverName = currentVeh.driverName,
-                                status = currentVeh.status,
-                                latitude = targetPoint.lat,
-                                longitude = targetPoint.lng,
-                                speedKmh = targetSpeed,
-                                fuelPercent = currentVeh.fuelPercent,
-                                batteryVoltage = currentVeh.batteryVoltage
-                            )
+                            _lastSyncStatus.value = sbResult.getOrElse { "Supabase: ${it.message}" }
                         }
                     }
                 }

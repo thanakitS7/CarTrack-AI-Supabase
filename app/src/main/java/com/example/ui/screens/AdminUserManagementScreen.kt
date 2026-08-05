@@ -83,7 +83,6 @@ fun AdminUserManagementScreen(viewModel: TrackingViewModel) {
     var vehicleToEdit by remember { mutableStateOf<VehicleEntity?>(null) }
     var vehicleToDelete by remember { mutableStateOf<VehicleEntity?>(null) }
     var showAddVehicleDialog by remember { mutableStateOf(false) }
-    var showGoogleSheetsUrlDialog by remember { mutableStateOf(false) }
 
     val filteredVehicles = allVehicles.filter { v ->
         v.name.contains(searchQuery, ignoreCase = true) ||
@@ -309,7 +308,7 @@ fun AdminUserManagementScreen(viewModel: TrackingViewModel) {
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "⚡ เชื่อมโยง Real-time: แก้ไขที่นี่ อัปเดตไปยังหน้า User และส่งไปยัง Google Sheet ทันที",
+                                    text = "⚡ เชื่อมโยง Real-time: แก้ไขที่นี่ อัปเดตไปยังหน้า User และ Supabase ทันที",
                                     color = Color(0xFF38BDF8),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Medium
@@ -319,7 +318,7 @@ fun AdminUserManagementScreen(viewModel: TrackingViewModel) {
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // Google Sheets Link Settings Card
+                        // Supabase Cloud Sync Card
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = Color(0xFF334155),
@@ -331,7 +330,7 @@ fun AdminUserManagementScreen(viewModel: TrackingViewModel) {
                                     .padding(12.dp)
                             ) {
                                 Text(
-                                    text = "🔗 Google Sheets Webhook Connection",
+                                    text = "⚡ Supabase Cloud Realtime Connection",
                                     color = Color.White,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
@@ -340,48 +339,30 @@ fun AdminUserManagementScreen(viewModel: TrackingViewModel) {
                                 Spacer(modifier = Modifier.height(4.dp))
 
                                 Text(
-                                    text = if (googleSheetsUrl.isNotBlank()) googleSheetsUrl else "ยังไม่ได้ตั้งค่า Webhook URL",
+                                    text = "ซิงค์และบันทึกประวัติการใช้รถและพิกัด GPS ตรงกับฐานข้อมูล Supabase 100%",
                                     color = Color.LightGray,
                                     fontSize = 11.sp,
-                                    maxLines = 1,
+                                    maxLines = 2,
                                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                 )
 
                                 Spacer(modifier = Modifier.height(10.dp))
 
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                Button(
+                                    onClick = {
+                                        viewModel.syncVehiclesFromCloud { success, msg ->
+                                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(36.dp)
                                 ) {
-                                    Button(
-                                        onClick = {
-                                            viewModel.syncVehiclesFromCloud { success, msg ->
-                                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                                            }
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(36.dp)
-                                    ) {
-                                        Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("ดึงข้อมูล Cloud", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    }
-
-                                    Button(
-                                        onClick = { showGoogleSheetsUrlDialog = true },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4)),
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(36.dp)
-                                    ) {
-                                        Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("ตั้งค่า Webhook", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    }
+                                    Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("ดึงและรีเฟรชข้อมูล Supabase Cloud", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -582,16 +563,15 @@ fun AdminUserManagementScreen(viewModel: TrackingViewModel) {
                                         Button(
                                             onClick = {
                                                 viewModel.selectVehicle(vehicle.id)
-                                                viewModel.syncCurrentVehicleToGoogleSheetsNow()
-                                                Toast.makeText(context, "ส่งข้อมูล ${vehicle.driverName} (${vehicle.licensePlate}) เข้า Google Sheets แล้ว", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "เลือกคัน ${vehicle.driverName} (${vehicle.licensePlate}) แล้ว", Toast.LENGTH_SHORT).show()
                                             },
                                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
                                             shape = RoundedCornerShape(8.dp),
                                             modifier = Modifier.height(30.dp)
                                         ) {
-                                            Icon(Icons.Default.Sync, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(12.dp))
+                                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(12.dp))
                                             Spacer(modifier = Modifier.width(4.dp))
-                                            Text("ส่งไป Google Sheet", fontSize = 10.sp, color = Color.White)
+                                            Text("เลือกคันนี้", fontSize = 10.sp, color = Color.White)
                                         }
                                     }
                                 }
@@ -663,15 +643,20 @@ fun AdminUserManagementScreen(viewModel: TrackingViewModel) {
                             value = editProvinceGroup,
                             onValueChange = {},
                             readOnly = true,
-                            label = { Text("📍 ชื่อ กลุ่ม ปจ. (กลุ่มจังหวัด)") },
+                            label = { Text("📍 ชื่อ กลุ่ม ปจ. (กลุ่มจังหวัด)", color = Color(0xFF6750A4)) },
                             trailingIcon = {
                                 IconButton(onClick = { editProvinceDropdownExpanded = true }) {
-                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = Color(0xFF1D1B20))
                                 }
                             },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = Color(0xFF1D1B20),
-                                unfocusedTextColor = Color(0xFF1D1B20)
+                                unfocusedTextColor = Color(0xFF1D1B20),
+                                disabledTextColor = Color(0xFF1D1B20),
+                                focusedBorderColor = Color(0xFF6750A4),
+                                unfocusedBorderColor = Color(0xFFCAC4D0),
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White
                             ),
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -682,11 +667,19 @@ fun AdminUserManagementScreen(viewModel: TrackingViewModel) {
                         )
                         DropdownMenu(
                             expanded = editProvinceDropdownExpanded,
-                            onDismissRequest = { editProvinceDropdownExpanded = false }
+                            onDismissRequest = { editProvinceDropdownExpanded = false },
+                            modifier = Modifier.background(Color.White)
                         ) {
                             provinceList.forEach { province ->
                                 DropdownMenuItem(
-                                    text = { Text(province, color = Color(0xFF1D1B20)) },
+                                    text = { 
+                                        Text(
+                                            text = province, 
+                                            color = Color(0xFF1D1B20),
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Medium
+                                        ) 
+                                    },
                                     onClick = {
                                         editProvinceGroup = province
                                         editProvinceDropdownExpanded = false
@@ -803,47 +796,4 @@ fun AdminUserManagementScreen(viewModel: TrackingViewModel) {
     }
 
     // Google Sheets URL Dialog
-    if (showGoogleSheetsUrlDialog) {
-        var tempUrl by remember { mutableStateOf(googleSheetsUrl) }
-        AlertDialog(
-            onDismissRequest = { showGoogleSheetsUrlDialog = false },
-            containerColor = Color.White,
-            title = {
-                Text("🔗 Google Sheets Webhook URL Settings", color = Color(0xFF1D1B20), fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            },
-            text = {
-                Column {
-                    Text("ใส่ URL ของ Google Apps Script (doPost/doGet Web App) เพื่อรับข้อมูลผู้ใช้รถและพิกัด GPS:", fontSize = 12.sp, color = Color(0xFF49454F))
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = tempUrl,
-                        onValueChange = { tempUrl = it },
-                        label = { Text("Webhook URL") },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color(0xFF1D1B20),
-                            unfocusedTextColor = Color(0xFF1D1B20)
-                        )
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.updateGoogleSheetsUrl(tempUrl)
-                        showGoogleSheetsUrlDialog = false
-                        Toast.makeText(context, "อัปเดต Google Sheets Webhook URL เรียบร้อย", Toast.LENGTH_SHORT).show()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4))
-                ) {
-                    Text("บันทึก URL")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showGoogleSheetsUrlDialog = false }) {
-                    Text("ยกเลิก")
-                }
-            }
-        )
-    }
 }

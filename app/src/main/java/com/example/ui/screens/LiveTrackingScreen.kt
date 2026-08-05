@@ -1131,7 +1131,7 @@ fun VehicleTelemetryCard(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = if (isTripActive) "ซิงค์ Google Sheets: $lastSyncStatus" else "พร้อมซิงค์ Google Sheets เมื่อเริ่มเดินทาง",
+                            text = if (isTripActive) "ซิงค์ Supabase สด: $lastSyncStatus" else "พร้อมซิงค์ Supabase เมื่อเริ่มเดินทาง",
                             color = Color.Gray,
                             fontSize = 10.sp
                         )
@@ -1276,7 +1276,7 @@ fun VehicleTelemetryCard(
             },
             text = {
                 Column {
-                    Text("ชื่อนี้จะถูกส่งไปบันทึกลง Google Sheet พร้อมกับพิกัด GPS สดทุกครั้งที่มีการอัปเดต:", fontSize = 12.sp, color = Color(0xFF49454F))
+                    Text("ชื่อนี้จะถูกบันทึกและส่งขึ้นระบบ Supabase พร้อมกับพิกัด GPS สดทุกครั้งที่มีการอัปเดต:", fontSize = 12.sp, color = Color(0xFF49454F))
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = tempDriverName,
@@ -1482,17 +1482,20 @@ fun AddVehicleDialog(
                         value = provinceGroup,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("📍 ชื่อ กลุ่ม ปจ. (กลุ่มจังหวัด)") },
+                        label = { Text("📍 ชื่อ กลุ่ม ปจ. (กลุ่มจังหวัด)", color = Color(0xFF6750A4)) },
                         trailingIcon = {
                             IconButton(onClick = { provinceDropdownExpanded = true }) {
-                                Icon(Icons.Default.ArrowDropDown, contentDescription = "Select Province Group")
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = "Select Province Group", tint = Color(0xFF1D1B20))
                             }
                         },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color(0xFF1D1B20),
                             unfocusedTextColor = Color(0xFF1D1B20),
+                            disabledTextColor = Color(0xFF1D1B20),
                             focusedBorderColor = Color(0xFF6750A4),
-                            unfocusedBorderColor = Color(0xFFCAC4D0)
+                            unfocusedBorderColor = Color(0xFFCAC4D0),
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -1503,11 +1506,19 @@ fun AddVehicleDialog(
                     )
                     DropdownMenu(
                         expanded = provinceDropdownExpanded,
-                        onDismissRequest = { provinceDropdownExpanded = false }
+                        onDismissRequest = { provinceDropdownExpanded = false },
+                        modifier = Modifier.background(Color.White)
                     ) {
                         provinceList.forEach { province ->
                             DropdownMenuItem(
-                                text = { Text(province, color = Color(0xFF1D1B20)) },
+                                text = { 
+                                    Text(
+                                        text = province, 
+                                        color = Color(0xFF1D1B20),
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Medium
+                                    ) 
+                                },
                                 onClick = {
                                     provinceGroup = province
                                     provinceDropdownExpanded = false
