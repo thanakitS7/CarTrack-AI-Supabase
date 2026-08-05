@@ -287,25 +287,47 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                 heading = heading
             )
 
-            // Auto-sync real GPS coordinates to Google Sheets if trip is active
-            val now = System.currentTimeMillis()
-            if (_isTripActive.value && _isGoogleSheetsSyncEnabled.value && (now - lastSyncTimeMs > 5000L)) {
-                lastSyncTimeMs = now
-                val result = com.example.util.GoogleSheetsSyncManager.sendTelemetryToGoogleSheets(
-                    webhookUrl = _googleSheetsUrl.value,
-                    vehicleId = vehicle.id,
-                    vehicleName = vehicle.name,
-                    licensePlate = vehicle.licensePlate,
-                    driverName = vehicle.driverName,
-                    status = if (speedKmh > 3) "MOVING (GPS สด)" else "IDLE (จอดพัก)",
-                    latitude = lat,
-                    longitude = lng,
-                    speedKmh = speedKmh,
-                    fuelPercent = vehicle.fuelPercent,
-                    batteryVoltage = vehicle.batteryVoltage
-                )
-                _lastSyncStatus.value = result.getOrElse { "ส่งพิกัด GPS สดสำเร็จ (${speedKmh} กม./ชม.)" }
-            }
+                // Auto-sync real GPS coordinates to Supabase & Google Sheets if trip is active
+                val now = System.currentTimeMillis()
+                if (_isTripActive.value && (now - lastSyncTimeMs > 5000L)) {
+                    lastSyncTimeMs = now
+                    
+                    if (_isSupabaseSyncEnabled.value) {
+                        viewModelScope.launch {
+                            val sbResult = com.example.util.SupabaseSyncManager.sendTelemetryToSupabase(
+                                baseUrl = _supabaseUrl.value,
+                                anonKey = _supabaseAnonKey.value,
+                                vehicleId = vehicle.id,
+                                vehicleName = vehicle.name,
+                                licensePlate = vehicle.licensePlate,
+                                driverName = vehicle.driverName,
+                                status = if (speedKmh > 3) "MOVING (GPS สด)" else "IDLE (จอดพัก)",
+                                latitude = lat,
+                                longitude = lng,
+                                speedKmh = speedKmh,
+                                fuelPercent = vehicle.fuelPercent,
+                                batteryVoltage = vehicle.batteryVoltage
+                            )
+                            _lastSyncStatus.value = sbResult.getOrElse { "ส่ง Supabase สำเร็จ (${speedKmh} กม./ชม.)" }
+                        }
+                    }
+
+                    if (_isGoogleSheetsSyncEnabled.value) {
+                        val result = com.example.util.GoogleSheetsSyncManager.sendTelemetryToGoogleSheets(
+                            webhookUrl = _googleSheetsUrl.value,
+                            vehicleId = vehicle.id,
+                            vehicleName = vehicle.name,
+                            licensePlate = vehicle.licensePlate,
+                            driverName = vehicle.driverName,
+                            status = if (speedKmh > 3) "MOVING (GPS สด)" else "IDLE (จอดพัก)",
+                            latitude = lat,
+                            longitude = lng,
+                            speedKmh = speedKmh,
+                            fuelPercent = vehicle.fuelPercent,
+                            batteryVoltage = vehicle.batteryVoltage
+                        )
+                    }
+                }
         }
     }
 
@@ -688,6 +710,39 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
         _googleSheetsUrl.value = url
     }
 
+    fun setSupabaseConfig(url: String, key: String) {
+        _supabaseUrl.value = url
+        _supabaseAnonKey.value = key
+    }
+
+    fun toggleSupabaseSync(enabled: Boolean) {
+        _isSupabaseSyncEnabled.value = enabled
+    }
+
+    fun syncCurrentVehicleToSupabaseNow() {
+        val vehicle = activeVehicle.value ?: return
+        viewModelScope.launch {
+            _isSyncingInProcess.value = true
+            _lastSyncStatus.value = "กำลังส่งข้อมูลเข้า Supabase..."
+            val result = com.example.util.SupabaseSyncManager.sendTelemetryToSupabase(
+                baseUrl = _supabaseUrl.value,
+                anonKey = _supabaseAnonKey.value,
+                vehicleId = vehicle.id,
+                vehicleName = vehicle.name,
+                licensePlate = vehicle.licensePlate,
+                driverName = vehicle.driverName,
+                status = vehicle.status,
+                latitude = vehicle.currentLat,
+                longitude = vehicle.currentLng,
+                speedKmh = vehicle.speedKmh,
+                fuelPercent = vehicle.fuelPercent,
+                batteryVoltage = vehicle.batteryVoltage
+            )
+            _isSyncingInProcess.value = false
+            _lastSyncStatus.value = result.getOrElse { "ผิดพลาด Supabase: ${it.message}" }
+        }
+    }
+
     fun toggleGoogleSheetsSync(enabled: Boolean) {
         _isGoogleSheetsSyncEnabled.value = enabled
     }
@@ -772,24 +827,43 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                     heading = bearing
                 )
 
-                // Sync to Google Sheets every 3 steps if sync enabled
-                if (_isGoogleSheetsSyncEnabled.value && stepIndex % 3 == 0) {
+                // Sync to Supabase & Google Sheets every 3 steps if sync enabled
+                if (stepIndex % 3 == 0) {
                     val currentVeh = activeVehicle.value ?: vehicle
                     launch {
-                        val result = com.example.util.GoogleSheetsSyncManager.sendTelemetryToGoogleSheets(
-                            webhookUrl = _googleSheetsUrl.value,
-                            vehicleId = currentVeh.id,
-                            vehicleName = currentVeh.name,
-                            licensePlate = currentVeh.licensePlate,
-                            driverName = currentVeh.driverName,
-                            status = currentVeh.status,
-                            latitude = targetPoint.lat,
-                            longitude = targetPoint.lng,
-                            speedKmh = targetSpeed,
-                            fuelPercent = currentVeh.fuelPercent,
-                            batteryVoltage = currentVeh.batteryVoltage
-                        )
-                        _lastSyncStatus.value = result.getOrElse { "ผิดพลาด: ${it.message}" }
+                        if (_isSupabaseSyncEnabled.value) {
+                            val sbResult = com.example.util.SupabaseSyncManager.sendTelemetryToSupabase(
+                                baseUrl = _supabaseUrl.value,
+                                anonKey = _supabaseAnonKey.value,
+                                vehicleId = currentVeh.id,
+                                vehicleName = currentVeh.name,
+                                licensePlate = currentVeh.licensePlate,
+                                driverName = currentVeh.driverName,
+                                status = currentVeh.status,
+                                latitude = targetPoint.lat,
+                                longitude = targetPoint.lng,
+                                speedKmh = targetSpeed,
+                                fuelPercent = currentVeh.fuelPercent,
+                                batteryVoltage = currentVeh.batteryVoltage
+                            )
+                            _lastSyncStatus.value = sbResult.getOrElse { " Supabase: ${it.message}" }
+                        }
+
+                        if (_isGoogleSheetsSyncEnabled.value) {
+                            val result = com.example.util.GoogleSheetsSyncManager.sendTelemetryToGoogleSheets(
+                                webhookUrl = _googleSheetsUrl.value,
+                                vehicleId = currentVeh.id,
+                                vehicleName = currentVeh.name,
+                                licensePlate = currentVeh.licensePlate,
+                                driverName = currentVeh.driverName,
+                                status = currentVeh.status,
+                                latitude = targetPoint.lat,
+                                longitude = targetPoint.lng,
+                                speedKmh = targetSpeed,
+                                fuelPercent = currentVeh.fuelPercent,
+                                batteryVoltage = currentVeh.batteryVoltage
+                            )
+                        }
                     }
                 }
 

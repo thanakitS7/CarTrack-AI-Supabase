@@ -62,8 +62,8 @@ object SupabaseSyncManager {
             val mediaType = "application/json; charset=utf-8".toMediaType()
             val body = jsonPayload.toRequestBody(mediaType)
 
-            // UPSERT to 'vehicles' or 'telemetry' table using PostgREST ON CONFLICT merge
-            val request = Request.Builder()
+            // Try 1: UPSERT (POST with merge-duplicates)
+            val requestUpsert = Request.Builder()
                 .url("$cleanedUrl/rest/v1/vehicles")
                 .addHeader("apikey", anonKey)
                 .addHeader("Authorization", "Bearer $anonKey")
@@ -72,19 +72,67 @@ object SupabaseSyncManager {
                 .post(body)
                 .build()
 
-            client.newCall(request).execute().use { response ->
-                val respBody = response.body?.string() ?: ""
+            var isSuccess = false
+            var lastResponseBody = ""
+            var lastCode = 0
+
+            client.newCall(requestUpsert).execute().use { response ->
+                lastCode = response.code
+                lastResponseBody = response.body?.string() ?: ""
                 if (response.isSuccessful) {
-                    Log.d("SupabaseSync", "Successfully synced to Supabase: $respBody")
-                    
-                    // Also log to telemetry_history table if enabled
-                    logTelemetryHistory(cleanedUrl, anonKey, vehicleId, latitude, longitude, speedKmh, status, timeStr)
-                    
-                    Result.success("ส่งข้อมูลไปยัง Supabase สำเร็จ ($timeStr)")
-                } else {
-                    Log.e("SupabaseSync", "Failed Supabase request (${response.code}): $respBody")
-                    Result.failure(Exception("Supabase Error (${response.code}): $respBody"))
+                    isSuccess = true
                 }
+            }
+
+            // Try 2: If Upsert failed (e.g. no primary key constraint), try PATCH update
+            if (!isSuccess) {
+                val patchUrl = "$cleanedUrl/rest/v1/vehicles?vehicle_id=eq.$vehicleId"
+                val requestPatch = Request.Builder()
+                    .url(patchUrl)
+                    .addHeader("apikey", anonKey)
+                    .addHeader("Authorization", "Bearer $anonKey")
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Prefer", "return=representation")
+                    .patch(body)
+                    .build()
+
+                client.newCall(requestPatch).execute().use { response ->
+                    lastCode = response.code
+                    val patchBody = response.body?.string() ?: ""
+                    if (response.isSuccessful && patchBody != "[]" && patchBody.isNotEmpty()) {
+                        isSuccess = true
+                        lastResponseBody = patchBody
+                    }
+                }
+            }
+
+            // Try 3: If PATCH didn't update anything, try standard INSERT (POST without resolution header)
+            if (!isSuccess) {
+                val requestInsert = Request.Builder()
+                    .url("$cleanedUrl/rest/v1/vehicles")
+                    .addHeader("apikey", anonKey)
+                    .addHeader("Authorization", "Bearer $anonKey")
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Prefer", "return=representation")
+                    .post(body)
+                    .build()
+
+                client.newCall(requestInsert).execute().use { response ->
+                    lastCode = response.code
+                    lastResponseBody = response.body?.string() ?: ""
+                    if (response.isSuccessful) {
+                        isSuccess = true
+                    }
+                }
+            }
+
+            if (isSuccess) {
+                Log.d("SupabaseSync", "Successfully synced to Supabase: $lastResponseBody")
+                logTelemetryHistory(cleanedUrl, anonKey, vehicleId, latitude, longitude, speedKmh, status, timeStr)
+                Result.success("ส่งข้อมูลไปยัง Supabase สำเร็จ ($timeStr)")
+            } else {
+                Log.e("SupabaseSync", "Failed Supabase request ($lastCode): $lastResponseBody")
+                Result.failure(Exception("Supabase Error ($lastCode): $lastResponseBody"))
             }
         } catch (e: Exception) {
             Log.e("SupabaseSync", "Error sending to Supabase", e)
