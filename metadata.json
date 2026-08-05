@@ -1,0 +1,6 @@
+{
+  "name": "PostCarTrack",
+  "description": "ระบบติดตามรถยนต์และแจ้งเตือนความเร็ว GPS (Real-time GPS Tracking)",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
