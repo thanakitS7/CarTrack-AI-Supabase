@@ -126,6 +126,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.data.RouteGeofenceEntity
 import com.example.data.VehicleEntity
+import com.example.data.effectiveStatus
+import com.example.data.isGpsOffline
 import com.example.ui.TrackingViewModel
 import com.example.ui.components.MapViewCanvas
 import com.example.ui.theme.AmberWarning
@@ -669,10 +671,12 @@ fun VehicleChipItem(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    val statusColor = when (vehicle.status) {
-        "ALERT_OUT_OF_ROUTE" -> CrimsonAlert
-        "MOVING" -> EmeraldSafe
-        "STOPPED" -> CrimsonAlert
+    val effectiveStatus = vehicle.effectiveStatus
+    val statusColor = when {
+        effectiveStatus == "OFFLINE" -> Color.Gray
+        effectiveStatus == "ALERT_OUT_OF_ROUTE" -> CrimsonAlert
+        effectiveStatus == "MOVING" || effectiveStatus.startsWith("MOVING") -> EmeraldSafe
+        effectiveStatus == "STOPPED" -> CrimsonAlert
         else -> AmberWarning
     }
 
@@ -969,7 +973,7 @@ fun VehicleTelemetryCard(
                         }
                     }
 
-                    StatusChip(status = vehicle.status, isLocked = vehicle.isEngineLocked)
+                    StatusChip(status = vehicle.effectiveStatus, isLocked = vehicle.isEngineLocked, isOffline = vehicle.isGpsOffline)
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -1364,11 +1368,12 @@ fun TelemetryTile(
 }
 
 @Composable
-fun StatusChip(status: String, isLocked: Boolean) {
+fun StatusChip(status: String, isLocked: Boolean, isOffline: Boolean = false) {
     val (label, bg, fg) = when {
         isLocked -> Triple("ล็อคเครื่องยนต์", CrimsonAlert, Color.White)
+        isOffline || status == "OFFLINE" || status.startsWith("OFFLINE") -> Triple("OFFLINE (ขาดการเชื่อมต่อ)", Color.Gray, Color.White)
         status == "ALERT_OUT_OF_ROUTE" -> Triple("ออกนอกเส้นทาง", CrimsonAlert, Color.White)
-        status == "MOVING" -> Triple("กำลังเคลื่อนที่", EmeraldSafe, Color.Black)
+        status == "MOVING" || status.startsWith("MOVING") -> Triple("กำลังเคลื่อนที่", EmeraldSafe, Color.Black)
         else -> Triple("จอดสแตนบาย", AmberWarning, Color.Black)
     }
 

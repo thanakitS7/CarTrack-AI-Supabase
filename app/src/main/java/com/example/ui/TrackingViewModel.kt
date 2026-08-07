@@ -717,12 +717,36 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                                     }
                                 }
                             }
-                            val status = jsonObj.optString("status").ifBlank {
+                            val rawStatus = jsonObj.optString("status").ifBlank {
                                 jsonObj.optString("สถานะ", "STOPPED")
                             }
                             val lat = jsonObj.optDouble("latitude", jsonObj.optDouble("ละติจูด", jsonObj.optDouble("lat", 13.7563)))
                             val lng = jsonObj.optDouble("longitude", jsonObj.optDouble("ลองจิจูด", jsonObj.optDouble("lng", 100.5018)))
                             val speed = jsonObj.optInt("speedKmh", jsonObj.optInt("ความเร็ว", jsonObj.optInt("speed", 0)))
+
+                            val updateStr = jsonObj.optString("updated_at").ifBlank {
+                                jsonObj.optString("created_at").ifBlank { jsonObj.optString("timestamp") }
+                            }
+                            var lastUpdateMs = System.currentTimeMillis()
+                            if (updateStr.isNotBlank()) {
+                                val formats = listOf(
+                                    "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+                                    "yyyy-MM-dd'T'HH:mm:ss'Z'",
+                                    "yyyy-MM-dd'T'HH:mm:ss",
+                                    "yyyy-MM-dd HH:mm:ss"
+                                )
+                                for (fmt in formats) {
+                                    try {
+                                        val d = java.text.SimpleDateFormat(fmt, java.util.Locale.US).parse(updateStr)
+                                        if (d != null) {
+                                            lastUpdateMs = d.time
+                                            break
+                                        }
+                                    } catch (e: Exception) {}
+                                }
+                            }
+                            val isOffline = (System.currentTimeMillis() - lastUpdateMs) > 5 * 60 * 1000L
+                            val finalStatus = if (isOffline) "OFFLINE" else rawStatus
 
                             val existing = allVehicles.value.firstOrNull { it.id == vId }
                             if (existing != null) {
@@ -731,10 +755,11 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                                         name = name,
                                         licensePlate = plate,
                                         driverName = driver,
-                                        status = status,
+                                        status = finalStatus,
                                         currentLat = if (lat != 0.0) lat else existing.currentLat,
                                         currentLng = if (lng != 0.0) lng else existing.currentLng,
-                                        speedKmh = speed
+                                        speedKmh = speed,
+                                        lastUpdateMillis = lastUpdateMs
                                     )
                                 )
                             } else {
@@ -744,7 +769,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                                         name = name,
                                         licensePlate = plate,
                                         modelYear = "2024",
-                                        status = status,
+                                        status = finalStatus,
                                         currentLat = if (lat != 0.0) lat else 13.7563,
                                         currentLng = if (lng != 0.0) lng else 100.5018,
                                         speedKmh = speed,
@@ -752,7 +777,8 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                                         fuelPercent = 100,
                                         batteryVoltage = 12.6,
                                         activeRouteId = null,
-                                        driverName = driver
+                                        driverName = driver,
+                                        lastUpdateMillis = lastUpdateMs
                                     )
                                 )
                             }

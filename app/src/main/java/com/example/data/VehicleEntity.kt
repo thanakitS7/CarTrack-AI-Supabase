@@ -23,3 +23,9 @@ data class VehicleEntity(
     val provinceGroup: String = "ขอนแก่น",
     val lastUpdateMillis: Long = System.currentTimeMillis()
 )
+
+val VehicleEntity.isGpsOffline: Boolean
+    get() = (System.currentTimeMillis() - lastUpdateMillis) > 5 * 60 * 1000L || status.contains("OFFLINE", ignoreCase = true)
+
+val VehicleEntity.effectiveStatus: String
+    get() = if (isGpsOffline) "OFFLINE" else status
