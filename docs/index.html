@@ -2372,13 +2372,15 @@
 
         function canUserEditVehicle(v) {
             if (!currentUser) return false;
-            if (currentUser.role === 'admin') return true;
+            if (currentUser.role === 'admin' || currentUser.province_group === 'ALL' || (currentUser.postal_code || '').toLowerCase() === 'all') return true;
             if (currentUser.role === 'manager') {
                 const vPg = (v.province_group || '').trim().toLowerCase();
                 const vOffice = (v.office_name || '').trim().toLowerCase();
                 const uPg = (currentUser.province_group || '').trim().toLowerCase();
                 const uCode = (currentUser.postal_code || '').trim().toLowerCase();
 
+                if (uPg === 'all' || uCode === 'all') return true;
+                if (!vPg || vPg === '-') return true; // Allow manager to edit / assign unallocated vehicles
                 if (vPg === uPg || (vPg && uPg && (vPg.includes(uPg) || uPg.includes(vPg)))) return true;
                 if (uCode && (vPg.includes(uCode) || vOffice.includes(uCode))) return true;
 
@@ -2424,7 +2426,7 @@
             const roleBadge = document.getElementById("adminRoleBadge");
             const roleDesc = document.getElementById("adminRoleDesc");
             if (roleBadge && roleDesc) {
-                if (currentUser && currentUser.role === 'admin') {
+                if (currentUser && (currentUser.role === 'admin' || currentUser.province_group === 'ALL')) {
                     roleBadge.className = "text-[10px] px-2.5 py-0.5 rounded-full font-bold bg-purple-900/80 text-purple-300 border border-purple-500/50";
                     roleBadge.innerText = "👑 Super Admin (แก้ไขได้ทุกคัน)";
                     roleDesc.innerText = "ท่านสามารถแก้ไขข้อมูลทะเบียน ชื่อรถ คนขับ สำนักงาน กลุ่มจังหวัด และสถานะการใช้งานของรถทุกคันได้";
@@ -2458,35 +2460,36 @@
             }
 
             tbody.innerHTML = list.map(v => {
-                const isEditing = editingVehicleId === v.id;
+                const vKey = v.id || v.vehicle_id;
+                const isEditing = editingVehicleId === vKey;
                 const canEdit = canUserEditVehicle(v);
 
                 if (isEditing) {
                     return `
                         <tr class="bg-slate-800/90 border-b border-purple-500/50">
                             <td class="p-2.5">
-                                <input type="text" id="edit_lp_${v.id}" value="${v.license_plate || ''}" class="bg-slate-900 border border-purple-500 rounded px-2 py-1 text-xs text-white w-full">
+                                <input type="text" id="edit_lp_${vKey}" value="${v.license_plate || ''}" class="bg-slate-900 border border-purple-500 rounded px-2 py-1 text-xs text-white w-full">
                             </td>
                             <td class="p-2.5">
-                                <input type="text" id="edit_vn_${v.id}" value="${v.vehicle_name || ''}" class="bg-slate-900 border border-purple-500 rounded px-2 py-1 text-xs text-white w-full">
+                                <input type="text" id="edit_vn_${vKey}" value="${v.vehicle_name || ''}" class="bg-slate-900 border border-purple-500 rounded px-2 py-1 text-xs text-white w-full">
                             </td>
                             <td class="p-2.5">
-                                <input type="text" id="edit_dn_${v.id}" value="${v.driver_name || ''}" class="bg-slate-900 border border-purple-500 rounded px-2 py-1 text-xs text-white w-full">
+                                <input type="text" id="edit_dn_${vKey}" value="${v.driver_name || ''}" class="bg-slate-900 border border-purple-500 rounded px-2 py-1 text-xs text-white w-full">
                             </td>
                             <td class="p-2.5">
-                                <input type="text" id="edit_on_${v.id}" value="${v.office_name || ''}" class="bg-slate-900 border border-purple-500 rounded px-2 py-1 text-xs text-white w-full">
+                                <input type="text" id="edit_on_${vKey}" value="${v.office_name || ''}" class="bg-slate-900 border border-purple-500 rounded px-2 py-1 text-xs text-white w-full">
                             </td>
                             <td class="p-2.5">
-                                <input type="text" id="edit_pg_${v.id}" value="${v.province_group || ''}" placeholder="กลุ่มจังหวัด..." class="bg-slate-900 border border-purple-500 rounded px-2 py-1 text-xs text-white w-full">
+                                <input type="text" id="edit_pg_${vKey}" value="${v.province_group || ''}" placeholder="กลุ่มจังหวัด..." class="bg-slate-900 border border-purple-500 rounded px-2 py-1 text-xs text-white w-full">
                             </td>
                             <td class="p-2.5 text-center">
-                                <select id="edit_st_${v.id}" class="bg-slate-900 border border-purple-500 rounded px-1.5 py-1 text-xs text-white">
+                                <select id="edit_st_${vKey}" class="bg-slate-900 border border-purple-500 rounded px-1.5 py-1 text-xs text-white">
                                     <option value="true" ${v.is_active ? 'selected' : ''}>ใช้งาน</option>
                                     <option value="false" ${!v.is_active ? 'selected' : ''}>ปิดใช้งาน</option>
                                 </select>
                             </td>
                             <td class="p-2.5 text-center flex items-center justify-center space-x-1.5">
-                                <button onclick="saveAdminVehicle('${v.id}')" title="บันทึก" class="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded text-xs font-bold shadow-lg shadow-emerald-600/20"><i class="fa-solid fa-check mr-1"></i>บันทึก</button>
+                                <button onclick="saveAdminVehicle('${vKey}')" title="บันทึก" class="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded text-xs font-bold shadow-lg shadow-emerald-600/20"><i class="fa-solid fa-check mr-1"></i>บันทึก</button>
                                 <button onclick="cancelAdminEdit()" title="ยกเลิก" class="bg-slate-700 hover:bg-slate-600 text-slate-200 px-2 py-1 rounded text-xs"><i class="fa-solid fa-xmark"></i></button>
                             </td>
                         </tr>
@@ -2508,7 +2511,7 @@
                         </td>
                         <td class="p-3 text-center">
                             ${canEdit 
-                                ? `<button onclick="startAdminEdit('${v.id}')" class="bg-purple-600/80 hover:bg-purple-500 text-white px-2.5 py-1 rounded-lg text-xs font-medium transition flex items-center space-x-1 mx-auto shadow-md">
+                                ? `<button onclick="startAdminEdit('${vKey}')" class="bg-purple-600/80 hover:bg-purple-500 text-white px-2.5 py-1 rounded-lg text-xs font-medium transition flex items-center space-x-1 mx-auto shadow-md">
                                     <i class="fa-solid fa-pen-to-square"></i>
                                     <span>แก้ไข</span>
                                    </button>`
@@ -2523,9 +2526,13 @@
         }
 
         function startAdminEdit(id) {
-            const v = vehiclesData.find(item => item.id === id);
-            if (!v || !canUserEditVehicle(v)) {
-                alert(`ท่านไม่มีสิทธิ์แก้ไขรถคันนี้ (อนุญาตเฉพาะกลุ่ม ${currentUser ? currentUser.province_group : ''})`);
+            const v = vehiclesData.find(item => (item.id === id || item.vehicle_id === id));
+            if (!v) {
+                alert("ไม่พบข้อมูลรถคันนี้");
+                return;
+            }
+            if (!canUserEditVehicle(v)) {
+                alert(`ท่านไม่มีสิทธิ์แก้ไขรถคันนี้ (กลุ่มรถ: "${v.province_group || 'ไม่ระบุ'}", สิทธิ์ของคุณ: "${currentUser ? currentUser.province_group : ''}")`);
                 return;
             }
             editingVehicleId = id;
@@ -2538,7 +2545,7 @@
         }
 
         async function saveAdminVehicle(id) {
-            const v = vehiclesData.find(item => item.id === id);
+            const v = vehiclesData.find(item => (item.id === id || item.vehicle_id === id));
             if (!v || !canUserEditVehicle(v)) {
                 alert("ไม่อนุญาตให้แก้ไขเนื่องจากไม่มีสิทธิ์สอดคล้องกับกลุ่มจังหวัด");
                 return;
@@ -2553,18 +2560,16 @@
 
             try {
                 // Update local vehicleData first for responsive UI
-                const target = vehiclesData.find(item => item.id === id);
-                if (target) {
-                    target.license_plate = lp;
-                    target.vehicle_name = vn;
-                    target.driver_name = dn;
-                    target.office_name = on;
-                    target.province_group = pg;
-                    target.is_active = st;
-                }
+                v.license_plate = lp;
+                v.vehicle_name = vn;
+                v.driver_name = dn;
+                v.office_name = on;
+                v.province_group = pg;
+                v.is_active = st;
 
                 // Call Supabase API update if available
-                const resp = await fetch(`${supabaseUrl}/rest/v1/vehicles?id=eq.${id}`, {
+                const paramKey = v.id ? `id=eq.${v.id}` : `vehicle_id=eq.${v.vehicle_id}`;
+                const resp = await fetch(`${supabaseUrl}/rest/v1/vehicles?${paramKey}`, {
                     method: 'PATCH',
                     headers: {
                         'apikey': supabaseKey,

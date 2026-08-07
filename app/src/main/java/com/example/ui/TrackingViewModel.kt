@@ -71,7 +71,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
     private val _googleSheetsUrl = MutableStateFlow(com.example.util.GoogleSheetsSyncManager.DEFAULT_WEBHOOK_URL)
     val googleSheetsUrl: StateFlow<String> = _googleSheetsUrl.asStateFlow()
 
-    private val _isGoogleSheetsSyncEnabled = MutableStateFlow(true)
+    private val _isGoogleSheetsSyncEnabled = MutableStateFlow(false)
     val isGoogleSheetsSyncEnabled: StateFlow<Boolean> = _isGoogleSheetsSyncEnabled.asStateFlow()
 
     // Supabase Cloud Database State
