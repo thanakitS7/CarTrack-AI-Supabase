@@ -30,4 +30,47 @@ object SampleData {
     val INITIAL_ROUTES = emptyList<RouteGeofenceEntity>()
 
     val INITIAL_ALERTS = emptyList<AlertEntity>()
+
+    val INITIAL_USERS = listOf(
+        UserEntity(
+            id = "USR-001",
+            name = "นายสมชาย ใจดี",
+            role = "DRIVER",
+            phone = "081-234-5678",
+            officeName = "ปณ.เมืองขอนแก่น",
+            provinceGroup = "ขอนแก่น (ขก)",
+            assignedVehicleId = "V001",
+            status = "ACTIVE"
+        ),
+        UserEntity(
+            id = "USR-002",
+            name = "นายวิชัย มั่นคง",
+            role = "DRIVER",
+            phone = "089-876-5432",
+            officeName = "ปณ.เมืองขอนแก่น",
+            provinceGroup = "ขอนแก่น (ขก)",
+            assignedVehicleId = "V002",
+            status = "ACTIVE"
+        ),
+        UserEntity(
+            id = "USR-003",
+            name = "นายประเสริฐ คุมพื้นที่ (Manager)",
+            role = "MANAGER",
+            phone = "086-555-4321",
+            officeName = "ที่ทำการไปรษณีย์เขต 4",
+            provinceGroup = "ขอนแก่น (ขก)",
+            assignedVehicleId = "",
+            status = "ACTIVE"
+        ),
+        UserEntity(
+            id = "USR-004",
+            name = "ผู้ดูแลระบบศูนย์ควบคุม (Admin)",
+            role = "ADMIN",
+            phone = "02-999-8888",
+            officeName = "ศูนย์ไปรษณีย์ขอนแก่น",
+            provinceGroup = "ทุกกลุ่มจังหวัด",
+            assignedVehicleId = "",
+            status = "ACTIVE"
+        )
+    )
 }

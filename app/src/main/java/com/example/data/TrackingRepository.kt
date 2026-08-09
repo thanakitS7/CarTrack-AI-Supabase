@@ -14,6 +14,7 @@ class TrackingRepository(private val dao: AppDao) {
     val allVehicles: Flow<List<VehicleEntity>> = dao.getAllVehicles()
     val allRoutes: Flow<List<RouteGeofenceEntity>> = dao.getAllRoutes()
     val allAlerts: Flow<List<AlertEntity>> = dao.getAllAlerts()
+    val allUsers: Flow<List<UserEntity>> = dao.getAllUsers()
 
     suspend fun initializeSampleDataIfNeeded() = withContext(Dispatchers.IO) {
         val existing = dao.getAllVehicles().firstOrNull()
@@ -35,6 +36,11 @@ class TrackingRepository(private val dao: AppDao) {
                 )
             }
             dao.insertLocationPoints(historyPoints)
+        }
+
+        val existingUsers = dao.getAllUsers().firstOrNull()
+        if (existingUsers.isNullOrEmpty()) {
+            dao.insertUsers(SampleData.INITIAL_USERS)
         }
     }
 
@@ -186,6 +192,18 @@ class TrackingRepository(private val dao: AppDao) {
 
     suspend fun deleteRoute(routeId: String) = withContext(Dispatchers.IO) {
         dao.deleteRoute(routeId)
+    }
+
+    suspend fun addUser(user: UserEntity) = withContext(Dispatchers.IO) {
+        dao.insertUser(user)
+    }
+
+    suspend fun insertUsers(users: List<UserEntity>) = withContext(Dispatchers.IO) {
+        dao.insertUsers(users)
+    }
+
+    suspend fun deleteUser(userId: String) = withContext(Dispatchers.IO) {
+        dao.deleteUser(userId)
     }
 
     fun parseWaypoints(jsonStr: String): List<LatLng> {

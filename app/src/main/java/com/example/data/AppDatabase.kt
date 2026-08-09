@@ -10,9 +10,10 @@ import androidx.room.RoomDatabase
         VehicleEntity::class,
         RouteGeofenceEntity::class,
         AlertEntity::class,
-        LocationHistoryEntity::class
+        LocationHistoryEntity::class,
+        UserEntity::class
     ],
-    version = 3,
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

@@ -17,6 +17,7 @@ import com.example.util.GeoUtils
 import com.example.util.LatLng
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -51,6 +52,23 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
+
+    val allUsers = repository.allUsers.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    private val _currentUser = MutableStateFlow<com.example.data.UserEntity?>(null)
+    val currentUser: StateFlow<com.example.data.UserEntity?> = _currentUser.asStateFlow()
+
+    fun loginUser(user: com.example.data.UserEntity) {
+        _currentUser.value = user
+    }
+
+    fun logout() {
+        _currentUser.value = null
+    }
 
     private val _selectedVehicleId = MutableStateFlow("V001")
     val selectedVehicleId: StateFlow<String> = _selectedVehicleId.asStateFlow()
@@ -153,6 +171,14 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
     init {
         viewModelScope.launch {
             repository.initializeSampleDataIfNeeded()
+            // Initial sync from Supabase cloud
+            syncVehiclesFromCloud()
+            syncUsersFromCloud()
+            // Periodic sync every 15 seconds
+            while (isActive) {
+                delay(15_000)
+                syncVehiclesFromCloud()
+            }
         }
     }
 
@@ -695,101 +721,123 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
 
     fun syncVehiclesFromCloud(onComplete: (Boolean, String) -> Unit = { _, _ -> }) {
         viewModelScope.launch {
-            val result = com.example.util.GoogleSheetsSyncManager.fetchVehiclesFromCloud(_googleSheetsUrl.value)
-            if (result.isSuccess) {
-                val list = result.getOrNull() ?: emptyList()
-                if (list.isNotEmpty()) {
-                    for (jsonObj in list) {
-                        val vId = jsonObj.optString("vehicleId").ifBlank {
-                            jsonObj.optString("รหัสรถ").ifBlank { jsonObj.optString("id") }
-                        }
-                        if (vId.isNotBlank()) {
-                            val name = jsonObj.optString("vehicleName").ifBlank {
-                                jsonObj.optString("ชื่อรถ").ifBlank { jsonObj.optString("name", "Vehicle") }
-                            }
-                            val plate = jsonObj.optString("licensePlate").ifBlank {
-                                jsonObj.optString("ทะเบียนรถ").ifBlank { jsonObj.optString("plate", "-") }
-                            }
-                            val driver = jsonObj.optString("driverName").ifBlank {
-                                jsonObj.optString("ชื่อผู้ใช้/พนักงานขับรถ").ifBlank {
-                                    jsonObj.optString("พนักงานขับรถ").ifBlank {
-                                        jsonObj.optString("driver", "Driver")
-                                    }
-                                }
-                            }
-                            val rawStatus = jsonObj.optString("status").ifBlank {
-                                jsonObj.optString("สถานะ", "STOPPED")
-                            }
-                            val lat = jsonObj.optDouble("latitude", jsonObj.optDouble("ละติจูด", jsonObj.optDouble("lat", 13.7563)))
-                            val lng = jsonObj.optDouble("longitude", jsonObj.optDouble("ลองจิจูด", jsonObj.optDouble("lng", 100.5018)))
-                            val speed = jsonObj.optInt("speedKmh", jsonObj.optInt("ความเร็ว", jsonObj.optInt("speed", 0)))
+            // First attempt to fetch from Supabase
+            val sbResult = com.example.util.SupabaseSyncManager.fetchVehiclesFromSupabase(
+                _supabaseUrl.value,
+                _supabaseAnonKey.value
+            )
 
-                            val updateStr = jsonObj.optString("updated_at").ifBlank {
-                                jsonObj.optString("created_at").ifBlank { jsonObj.optString("timestamp") }
-                            }
-                            var lastUpdateMs = System.currentTimeMillis()
-                            if (updateStr.isNotBlank()) {
-                                val formats = listOf(
-                                    "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-                                    "yyyy-MM-dd'T'HH:mm:ss'Z'",
-                                    "yyyy-MM-dd'T'HH:mm:ss",
-                                    "yyyy-MM-dd HH:mm:ss"
-                                )
-                                for (fmt in formats) {
-                                    try {
-                                        val d = java.text.SimpleDateFormat(fmt, java.util.Locale.US).parse(updateStr)
-                                        if (d != null) {
-                                            lastUpdateMs = d.time
-                                            break
-                                        }
-                                    } catch (e: Exception) {}
-                                }
-                            }
-                            val isOffline = (System.currentTimeMillis() - lastUpdateMs) > 5 * 60 * 1000L
-                            val finalStatus = if (isOffline) "OFFLINE" else rawStatus
+            var list = if (sbResult.isSuccess && !sbResult.getOrNull().isNullOrEmpty()) {
+                sbResult.getOrNull() ?: emptyList()
+            } else {
+                com.example.util.GoogleSheetsSyncManager.fetchVehiclesFromCloud(_googleSheetsUrl.value).getOrNull() ?: emptyList()
+            }
 
-                            val existing = allVehicles.value.firstOrNull { it.id == vId }
-                            if (existing != null) {
-                                repository.updateVehicle(
-                                    existing.copy(
-                                        name = name,
-                                        licensePlate = plate,
-                                        driverName = driver,
-                                        status = finalStatus,
-                                        currentLat = if (lat != 0.0) lat else existing.currentLat,
-                                        currentLng = if (lng != 0.0) lng else existing.currentLng,
-                                        speedKmh = speed,
-                                        lastUpdateMillis = lastUpdateMs
-                                    )
-                                )
-                            } else {
-                                repository.addVehicle(
-                                    com.example.data.VehicleEntity(
-                                        id = vId,
-                                        name = name,
-                                        licensePlate = plate,
-                                        modelYear = "2024",
-                                        status = finalStatus,
-                                        currentLat = if (lat != 0.0) lat else 13.7563,
-                                        currentLng = if (lng != 0.0) lng else 100.5018,
-                                        speedKmh = speed,
-                                        headingBearing = 0f,
-                                        fuelPercent = 100,
-                                        batteryVoltage = 12.6,
-                                        activeRouteId = null,
-                                        driverName = driver,
-                                        lastUpdateMillis = lastUpdateMs
-                                    )
-                                )
-                            }
+            if (list.isNotEmpty()) {
+                for (jsonObj in list) {
+                    val vId = jsonObj.optString("id").ifBlank {
+                        jsonObj.optString("vehicle_id").ifBlank {
+                            jsonObj.optString("vehicleId").ifBlank { jsonObj.optString("รหัสรถ") }
                         }
                     }
-                    onComplete(true, "ซิงค์รายชื่อรถและคนขับ ${list.size} คันจาก Google Sheets สำเร็จ!")
-                } else {
-                    onComplete(true, "ไม่มีข้อมูลใหม่จาก Google Sheets")
+                    if (vId.isNotBlank()) {
+                        val name = jsonObj.optString("vehicle_name").ifBlank {
+                            jsonObj.optString("vehicleName").ifBlank {
+                                jsonObj.optString("ชื่อรถ").ifBlank { jsonObj.optString("name", "Vehicle") }
+                            }
+                        }
+                        val plate = jsonObj.optString("license_plate").ifBlank {
+                            jsonObj.optString("licensePlate").ifBlank {
+                                jsonObj.optString("ทะเบียนรถ").ifBlank { jsonObj.optString("plate", "-") }
+                            }
+                        }
+                        val driver = jsonObj.optString("driver_name").ifBlank {
+                            jsonObj.optString("driverName").ifBlank {
+                                jsonObj.optString("ชื่อผู้ใช้/พนักงานขับรถ").ifBlank {
+                                    jsonObj.optString("พนักงานขับรถ").ifBlank { jsonObj.optString("driver", "Driver") }
+                                }
+                            }
+                        }
+                        val office = jsonObj.optString("office_name").ifBlank {
+                            jsonObj.optString("officeName").ifBlank { jsonObj.optString("สำนักงาน", "ปณ.เมืองขอนแก่น") }
+                        }
+                        val provinceGrp = jsonObj.optString("province_group").ifBlank {
+                            jsonObj.optString("provinceGroup").ifBlank { jsonObj.optString("กลุ่มจังหวัด", "ขอนแก่น") }
+                        }
+                        val rawStatus = jsonObj.optString("status").ifBlank {
+                            jsonObj.optString("สถานะ", "STOPPED")
+                        }
+                        val lat = jsonObj.optDouble("latitude", jsonObj.optDouble("current_lat", jsonObj.optDouble("ละติจูด", jsonObj.optDouble("lat", 13.7563))))
+                        val lng = jsonObj.optDouble("longitude", jsonObj.optDouble("current_lng", jsonObj.optDouble("ลองจิจูด", jsonObj.optDouble("lng", 100.5018))))
+                        val speed = jsonObj.optInt("speed_kmh", jsonObj.optInt("speedKmh", jsonObj.optInt("ความเร็ว", jsonObj.optInt("speed", 0))))
+
+                        val updateStr = jsonObj.optString("updated_at").ifBlank {
+                            jsonObj.optString("created_at").ifBlank { jsonObj.optString("timestamp") }
+                        }
+                        var lastUpdateMs = System.currentTimeMillis()
+                        if (updateStr.isNotBlank()) {
+                            val formats = listOf(
+                                "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+                                "yyyy-MM-dd'T'HH:mm:ss'Z'",
+                                "yyyy-MM-dd'T'HH:mm:ss",
+                                "yyyy-MM-dd HH:mm:ss"
+                            )
+                            for (fmt in formats) {
+                                try {
+                                    val d = java.text.SimpleDateFormat(fmt, java.util.Locale.US).parse(updateStr)
+                                    if (d != null) {
+                                        lastUpdateMs = d.time
+                                        break
+                                    }
+                                } catch (e: Exception) {}
+                            }
+                        }
+                        val isOffline = (System.currentTimeMillis() - lastUpdateMs) > 5 * 60 * 1000L
+                        val finalStatus = if (isOffline) "OFFLINE" else rawStatus
+
+                        val existing = allVehicles.value.firstOrNull { it.id == vId }
+                        if (existing != null) {
+                            repository.updateVehicle(
+                                existing.copy(
+                                    name = name,
+                                    licensePlate = plate,
+                                    driverName = driver,
+                                    officeName = office,
+                                    provinceGroup = provinceGrp,
+                                    status = finalStatus,
+                                    currentLat = if (lat != 0.0) lat else existing.currentLat,
+                                    currentLng = if (lng != 0.0) lng else existing.currentLng,
+                                    speedKmh = speed,
+                                    lastUpdateMillis = lastUpdateMs
+                                )
+                            )
+                        } else {
+                            repository.addVehicle(
+                                com.example.data.VehicleEntity(
+                                    id = vId,
+                                    name = name,
+                                    licensePlate = plate,
+                                    modelYear = "2024",
+                                    status = finalStatus,
+                                    currentLat = if (lat != 0.0) lat else 13.7563,
+                                    currentLng = if (lng != 0.0) lng else 100.5018,
+                                    speedKmh = speed,
+                                    headingBearing = 0f,
+                                    fuelPercent = 100,
+                                    batteryVoltage = 12.6,
+                                    activeRouteId = null,
+                                    driverName = driver,
+                                    officeName = office,
+                                    provinceGroup = provinceGrp,
+                                    lastUpdateMillis = lastUpdateMs
+                                )
+                            )
+                        }
+                    }
                 }
+                onComplete(true, "ซิงค์รายชื่อรถและคนขับ ${list.size} คันจากคลาวด์สำเร็จ!")
             } else {
-                onComplete(false, result.exceptionOrNull()?.message ?: "ไม่สามารถดึงข้อมูลได้")
+                onComplete(true, "ไม่มีข้อมูลใหม่จากคลาวด์")
             }
         }
     }
@@ -971,6 +1019,139 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
 
                 stepIndex++
             }
+        }
+    }
+
+    fun syncUsersFromCloud(onComplete: (Boolean, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch {
+            val sbResult = com.example.util.SupabaseSyncManager.fetchUsersFromSupabase(
+                _supabaseUrl.value,
+                _supabaseAnonKey.value
+            )
+            if (sbResult.isSuccess) {
+                val list = sbResult.getOrNull() ?: emptyList()
+                if (list.isNotEmpty()) {
+                    val userEntities = list.mapNotNull { jsonObj ->
+                        val uId = jsonObj.optString("id")
+                        if (uId.isNotBlank()) {
+                            com.example.data.UserEntity(
+                                id = uId,
+                                name = jsonObj.optString("name", "ผู้ใช้งาน"),
+                                username = jsonObj.optString("username", ""),
+                                role = jsonObj.optString("role", "DRIVER"),
+                                email = jsonObj.optString("email", ""),
+                                phone = jsonObj.optString("phone", ""),
+                                password = jsonObj.optString("password", "123456"),
+                                officeName = jsonObj.optString("office_name", "ปณ.เมืองขอนแก่น"),
+                                provinceGroup = jsonObj.optString("province_group", "ขอนแก่น (ขก)"),
+                                assignedVehicleId = jsonObj.optString("assigned_vehicle_id", ""),
+                                status = jsonObj.optString("status", "ACTIVE")
+                            )
+                        } else null
+                    }
+                    if (userEntities.isNotEmpty()) {
+                        repository.insertUsers(userEntities)
+                        onComplete(true, "ซิงค์รายชื่อ User ${userEntities.size} รายการจาก Supabase สำเร็จ!")
+                    } else {
+                        onComplete(true, "ไม่มีข้อมูล User ใหม่จาก Supabase")
+                    }
+                } else {
+                    onComplete(true, "ยังไม่มีข้อมูล User ใน Supabase")
+                }
+            } else {
+                onComplete(false, sbResult.exceptionOrNull()?.message ?: "ไม่สามารถดึงข้อมูล User ได้")
+            }
+        }
+    }
+
+    fun addUserToSupabase(
+        id: String = "USR-${System.currentTimeMillis() % 10000}",
+        name: String,
+        username: String = "",
+        role: String = "DRIVER",
+        phone: String = "",
+        password: String = "123456",
+        officeName: String = "ปณ.เมืองขอนแก่น",
+        provinceGroup: String = "ขอนแก่น (ขก)",
+        assignedVehicleId: String = "",
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch {
+            val newUser = com.example.data.UserEntity(
+                id = id,
+                name = name,
+                username = username,
+                role = role,
+                phone = phone,
+                password = password,
+                officeName = officeName,
+                provinceGroup = provinceGroup,
+                assignedVehicleId = assignedVehicleId,
+                status = "ACTIVE"
+            )
+            repository.addUser(newUser)
+            val res = com.example.util.SupabaseSyncManager.updateUserInSupabase(
+                baseUrl = _supabaseUrl.value,
+                anonKey = _supabaseAnonKey.value,
+                userId = newUser.id,
+                name = newUser.name,
+                username = newUser.username,
+                role = newUser.role,
+                phone = newUser.phone,
+                password = newUser.password,
+                officeName = newUser.officeName,
+                provinceGroup = newUser.provinceGroup,
+                assignedVehicleId = newUser.assignedVehicleId,
+                status = newUser.status
+            )
+            if (res.isSuccess) {
+                onComplete(true, "เพิ่มผู้ใช้ $name ($role) ลง Supabase สำเร็จ!")
+            } else {
+                onComplete(true, "บันทึกข้อมูลผู้ใช้ในเครื่องสำเร็จ (Supabase: ${res.exceptionOrNull()?.message})")
+            }
+        }
+    }
+
+    fun updateUserInSupabase(
+        user: com.example.data.UserEntity,
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch {
+            repository.addUser(user)
+            val res = com.example.util.SupabaseSyncManager.updateUserInSupabase(
+                baseUrl = _supabaseUrl.value,
+                anonKey = _supabaseAnonKey.value,
+                userId = user.id,
+                name = user.name,
+                username = user.username,
+                role = user.role,
+                phone = user.phone,
+                password = user.password,
+                officeName = user.officeName,
+                provinceGroup = user.provinceGroup,
+                assignedVehicleId = user.assignedVehicleId,
+                status = user.status
+            )
+            if (res.isSuccess) {
+                onComplete(true, "อัปเดตผู้ใช้ ${user.name} ใน Supabase สำเร็จ!")
+            } else {
+                onComplete(true, "บันทึกข้อมูลในเครื่องสำเร็จ (Supabase: ${res.exceptionOrNull()?.message})")
+            }
+        }
+    }
+
+    fun deleteUserInSupabase(
+        userId: String,
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch {
+            repository.deleteUser(userId)
+            val res = com.example.util.SupabaseSyncManager.deleteUserFromSupabase(
+                baseUrl = _supabaseUrl.value,
+                anonKey = _supabaseAnonKey.value,
+                userId = userId
+            )
+            onComplete(true, "ลบผู้ใช้เรียบร้อยแล้ว")
         }
     }
 

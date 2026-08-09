@@ -675,6 +675,7 @@ fun VehicleChipItem(
     val statusColor = when {
         effectiveStatus == "OFFLINE" -> Color.Gray
         effectiveStatus == "ALERT_OUT_OF_ROUTE" -> CrimsonAlert
+        effectiveStatus.contains("PARKED") || effectiveStatus.contains("ถึงเป้าหมาย") -> Color(0xFF0284C7)
         effectiveStatus == "MOVING" || effectiveStatus.startsWith("MOVING") -> EmeraldSafe
         effectiveStatus == "STOPPED" -> CrimsonAlert
         else -> AmberWarning
@@ -1373,6 +1374,7 @@ fun StatusChip(status: String, isLocked: Boolean, isOffline: Boolean = false) {
         isLocked -> Triple("ล็อคเครื่องยนต์", CrimsonAlert, Color.White)
         isOffline || status == "OFFLINE" || status.startsWith("OFFLINE") -> Triple("OFFLINE (ขาดการเชื่อมต่อ)", Color.Gray, Color.White)
         status == "ALERT_OUT_OF_ROUTE" -> Triple("ออกนอกเส้นทาง", CrimsonAlert, Color.White)
+        status == "PARKED" || status.contains("PARKED") || status.contains("ถึงเป้าหมาย") -> Triple("🏁 ถึงเป้าหมายแล้ว", Color(0xFF0284C7), Color.White)
         status == "MOVING" || status.startsWith("MOVING") -> Triple("กำลังเคลื่อนที่", EmeraldSafe, Color.Black)
         else -> Triple("จอดสแตนบาย", AmberWarning, Color.Black)
     }

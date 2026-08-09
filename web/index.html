@@ -33,6 +33,7 @@
         }
         .vehicle-moving { background-color: #10B981; border: 3px solid #34D399; }
         .vehicle-idle { background-color: #F59E0B; border: 3px solid #FBBF24; }
+        .vehicle-parked { background-color: #0284C7; border: 3px solid #38BDF8; }
         .vehicle-offline { background-color: #6B7280; border: 3px solid #9CA3AF; }
         .pulse-moving { animation: pulse-green 2s infinite; }
         @keyframes pulse-green {
@@ -125,6 +126,7 @@
                     <div class="flex space-x-2">
                         <span class="text-emerald-400"><i class="fa-solid fa-circle text-[8px] mr-1"></i>วิ่ง <strong id="movingCount">0</strong></span>
                         <span class="text-amber-400"><i class="fa-solid fa-circle text-[8px] mr-1"></i>จอด <strong id="idleCount">0</strong></span>
+                        <span class="text-sky-400"><i class="fa-solid fa-flag-checkered text-[9px] mr-1"></i>ถึงเป้าหมาย <strong id="parkedCount">0</strong></span>
                         <span class="text-rose-400"><i class="fa-solid fa-wifi-slash text-[9px] mr-1"></i>ออฟไลน์ <strong id="offlineCount">0</strong></span>
                     </div>
                 </div>
@@ -857,8 +859,10 @@
         function getVehicleStatus(v) {
             if (!v) return "OFFLINE";
             if (isVehicleOffline(v)) return "OFFLINE";
-            if ((v.status || '').includes("OFFLINE")) return "OFFLINE";
-            if ((v.status || '').includes("MOVING") || (v.speed_kmh || 0) > 3) return "MOVING";
+            const st = (v.status || '').toUpperCase();
+            if (st.includes("OFFLINE")) return "OFFLINE";
+            if (st.includes("PARKED") || st.includes("ถึงเป้าหมาย") || st.includes("ARRIVED") || st.includes("DESTINATION")) return "PARKED";
+            if (st.includes("MOVING") || (v.speed_kmh || 0) > 3) return "MOVING";
             return v.status || "IDLE";
         }
 
@@ -881,6 +885,8 @@
             let statusBadge = "";
             if (st === "OFFLINE") {
                 statusBadge = `<span class="bg-rose-950/80 text-rose-300 border border-rose-700/80 px-2 py-0.5 rounded-full font-bold text-[10px]"><i class="fa-solid fa-wifi-slash mr-1 text-rose-400"></i>OFFLINE (ขาดเชื่อมต่อ >5 นาที)</span>`;
+            } else if (st === "PARKED") {
+                statusBadge = `<span class="bg-sky-950/90 text-sky-300 border border-sky-700/80 px-2 py-0.5 rounded-full font-bold text-[10px]"><i class="fa-solid fa-flag-checkered mr-1 text-sky-400"></i>🏁 ถึงเป้าหมายแล้ว</span>`;
             } else if (st === "MOVING") {
                 statusBadge = `<span class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold text-[10px] animate-pulse"><i class="fa-solid fa-circle text-[6px] mr-1"></i>วิ่งอยู่ ${v.speed_kmh || 0} km/h</span>`;
             } else {
@@ -1135,6 +1141,9 @@
             if (st === "OFFLINE") {
                 statusColor = "bg-rose-950/80 text-rose-300 border-rose-700/80";
                 statusLabel = "OFFLINE (ขาดการเชื่อมต่อ)";
+            } else if (st === "PARKED") {
+                statusColor = "bg-sky-950/90 text-sky-300 border-sky-700/80";
+                statusLabel = "🏁 ถึงเป้าหมายแล้ว";
             } else if (st === "MOVING") {
                 statusColor = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
                 statusLabel = "MOVING";
@@ -1197,11 +1206,14 @@
             if (mobCountEl) mobCountEl.innerText = vehicles.length;
 
             const movingCount = vehicles.filter(v => getVehicleStatus(v) === "MOVING").length;
+            const parkedCount = vehicles.filter(v => getVehicleStatus(v) === "PARKED").length;
             const idleCount = vehicles.filter(v => getVehicleStatus(v) === "IDLE").length;
             const offlineCount = vehicles.filter(v => getVehicleStatus(v) === "OFFLINE").length;
 
             document.getElementById("movingCount").innerText = movingCount;
             document.getElementById("idleCount").innerText = idleCount;
+            const parkedEl = document.getElementById("parkedCount");
+            if (parkedEl) parkedEl.innerText = parkedCount;
             const offlineEl = document.getElementById("offlineCount");
             if (offlineEl) offlineEl.innerText = offlineCount;
 
@@ -1238,6 +1250,7 @@
                     const items = groups[groupName];
                     const isExpanded = expandedGroups.has(groupName);
                     const grpMoving = items.filter(v => getVehicleStatus(v) === "MOVING").length;
+                    const grpParked = items.filter(v => getVehicleStatus(v) === "PARKED").length;
                     const grpOffline = items.filter(v => getVehicleStatus(v) === "OFFLINE").length;
                     const escapedGroupName = groupName.replace(/'/g, "\\'");
 
@@ -1249,6 +1262,7 @@
                                     <span class="truncate text-slate-100 font-bold">${groupName}</span>
                                     <span class="text-[10px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded-full font-mono">${items.length} คัน</span>
                                     ${grpMoving > 0 ? `<span class="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800 px-1.5 py-0.5 rounded-full font-mono"><i class="fa-solid fa-circle text-[6px] mr-1"></i>วิ่ง ${grpMoving}</span>` : ''}
+                                    ${grpParked > 0 ? `<span class="text-[10px] bg-sky-950 text-sky-300 border border-sky-800 px-1.5 py-0.5 rounded-full font-mono"><i class="fa-solid fa-flag-checkered text-[8px] mr-1"></i>ถึงแล้ว ${grpParked}</span>` : ''}
                                     ${grpOffline > 0 ? `<span class="text-[10px] bg-rose-950 text-rose-300 border border-rose-800 px-1.5 py-0.5 rounded-full font-mono"><i class="fa-solid fa-wifi-slash text-[8px] mr-1"></i>ดับ ${grpOffline}</span>` : ''}
                                 </div>
                                 <i class="fa-solid ${isExpanded ? 'fa-chevron-up text-sky-400' : 'fa-chevron-down text-slate-400'} text-xs ml-2"></i>
@@ -1272,6 +1286,9 @@
                 if (st === "OFFLINE") {
                     markerClass = "vehicle-offline";
                     markerIcon = "fa-wifi-slash";
+                } else if (st === "PARKED") {
+                    markerClass = "vehicle-parked";
+                    markerIcon = "fa-flag-checkered";
                 } else if (st === "MOVING") {
                     markerClass = "vehicle-moving pulse-moving";
                     markerIcon = "fa-location-arrow";

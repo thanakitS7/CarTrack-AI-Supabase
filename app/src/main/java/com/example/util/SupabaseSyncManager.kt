@@ -215,16 +215,88 @@ object SupabaseSyncManager {
     }
 
     /**
-     * Update user/driver data in Supabase 'users' or 'profiles' table
+     * Fetch all users from Supabase 'users' table
+     */
+    suspend fun fetchUsersFromSupabase(
+        baseUrl: String = DEFAULT_SUPABASE_URL,
+        anonKey: String = DEFAULT_ANON_KEY
+    ): Result<List<JSONObject>> = withContext(Dispatchers.IO) {
+        val cleanedUrl = baseUrl.trim().removeSuffix("/").removeSuffix("/rest/v1")
+
+        try {
+            val request = Request.Builder()
+                .url("$cleanedUrl/rest/v1/users?select=*")
+                .addHeader("apikey", anonKey)
+                .addHeader("Authorization", "Bearer $anonKey")
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: ""
+                if (response.isSuccessful) {
+                    val jsonArray = JSONArray(body)
+                    val list = mutableListOf<JSONObject>()
+                    for (i in 0 until jsonArray.length()) {
+                        list.add(jsonArray.getJSONObject(i))
+                    }
+                    Result.success(list)
+                } else {
+                    Result.failure(Exception("HTTP ${response.code}: $body"))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Delete user from Supabase 'users' table by ID
+     */
+    suspend fun deleteUserFromSupabase(
+        baseUrl: String = DEFAULT_SUPABASE_URL,
+        anonKey: String = DEFAULT_ANON_KEY,
+        userId: String
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val cleanedUrl = baseUrl.trim().removeSuffix("/").removeSuffix("/rest/v1")
+
+        try {
+            val request = Request.Builder()
+                .url("$cleanedUrl/rest/v1/users?id=eq.$userId")
+                .addHeader("apikey", anonKey)
+                .addHeader("Authorization", "Bearer $anonKey")
+                .delete()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: ""
+                if (response.isSuccessful) {
+                    Result.success("ลบข้อมูลผู้ใช้จาก Supabase เรียบร้อย")
+                } else {
+                    Result.failure(Exception("HTTP ${response.code}: $body"))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Update user/driver data in Supabase 'users' table
      */
     suspend fun updateUserInSupabase(
         baseUrl: String = DEFAULT_SUPABASE_URL,
         anonKey: String = DEFAULT_ANON_KEY,
         userId: String,
         name: String,
-        role: String,
+        username: String = "",
+        role: String = "DRIVER",
         email: String = "",
-        phone: String = ""
+        phone: String = "",
+        password: String = "123456",
+        officeName: String = "ปณ.เมืองขอนแก่น",
+        provinceGroup: String = "ขอนแก่น (ขก)",
+        assignedVehicleId: String = "",
+        status: String = "ACTIVE"
     ): Result<String> = withContext(Dispatchers.IO) {
         val cleanedUrl = baseUrl.trim().removeSuffix("/").removeSuffix("/rest/v1")
 
@@ -232,9 +304,15 @@ object SupabaseSyncManager {
             val payload = JSONObject().apply {
                 put("id", userId)
                 put("name", name)
+                put("username", username)
                 put("role", role)
                 put("email", email)
                 put("phone", phone)
+                put("password", password)
+                put("office_name", officeName)
+                put("province_group", provinceGroup)
+                put("assigned_vehicle_id", assignedVehicleId)
+                put("status", status)
                 put("updated_at", SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).format(Date()))
             }.toString()
 
@@ -260,4 +338,73 @@ object SupabaseSyncManager {
             Result.failure(e)
         }
     }
+
+    const val SUPABASE_SQL_SETUP_SCRIPT = """-- ===================================================
+-- 🐘 SUPABASE DATABASE CREATION SCRIPT FOR USERS & VEHICLES
+-- คัดลอกคำสั่ง SQL นี้ไปวางใน Supabase SQL Editor แล้วกด Run ได้เลย
+-- ===================================================
+
+-- 1. สร้างตาราง 'users' สำหรับเก็บข้อมูลผู้ใช้งาน, คนขับรถ และ ผู้จัดการ (MANAGER)
+CREATE TABLE IF NOT EXISTS public.users (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    username TEXT DEFAULT '',
+    role TEXT DEFAULT 'DRIVER', -- 'DRIVER', 'MANAGER', 'ADMIN', 'DISPATCHER', 'STAFF'
+    email TEXT DEFAULT '',
+    phone TEXT DEFAULT '',
+    password TEXT DEFAULT '123456', -- รหัสผ่านเข้าใช้งาน
+    office_name TEXT DEFAULT 'ปณ.เมืองขอนแก่น',
+    province_group TEXT DEFAULT 'ขอนแก่น (ขก)', -- ควบคุมเฉพาะกลุ่มจังหวัดของตัวเองสำหรับ role MANAGER
+    assigned_vehicle_id TEXT DEFAULT '',
+    status TEXT DEFAULT 'ACTIVE',
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- เพิ่มคอลัมน์ password และ username ในกรณีที่มีตาราง users อยู่ก่อนแล้ว
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password TEXT DEFAULT '123456';
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS username TEXT DEFAULT '';
+
+-- ปลดล็อกสิทธิ์ (RLS Policy) ให้แอปอ่าน/เขียนตาราง users ได้
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public read/write users" ON public.users;
+CREATE POLICY "Allow public read/write users" ON public.users FOR ALL USING (true) WITH CHECK (true);
+
+-- 2. สร้างตาราง 'vehicles' สำหรับเก็บตำแหน่ง GPS และสถานะรถ
+CREATE TABLE IF NOT EXISTS public.vehicles (
+    vehicle_id TEXT PRIMARY KEY,
+    vehicle_name TEXT,
+    license_plate TEXT,
+    driver_name TEXT,
+    office_name TEXT,
+    province_group TEXT,
+    status TEXT,
+    speed_kmh INT DEFAULT 0,
+    latitude DOUBLE PRECISION DEFAULT 13.7563,
+    longitude DOUBLE PRECISION DEFAULT 100.5018,
+    fuel_percent INT DEFAULT 100,
+    battery_voltage DOUBLE PRECISION DEFAULT 12.6,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ปลดล็อกสิทธิ์ (RLS Policy) ให้แอปอ่าน/เขียนตาราง vehicles ได้
+ALTER TABLE public.vehicles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public read/write vehicles" ON public.vehicles;
+CREATE POLICY "Allow public read/write vehicles" ON public.vehicles FOR ALL USING (true) WITH CHECK (true);
+
+-- 3. สร้างตาราง 'telemetry_history' สำหรับเก็บบันทึกประวัติพิกัด GPS ย้อนหลัง
+CREATE TABLE IF NOT EXISTS public.telemetry_history (
+    id BIGSERIAL PRIMARY KEY,
+    vehicle_id TEXT,
+    latitude DOUBLE PRECISION,
+    longitude DOUBLE PRECISION,
+    speed_kmh INT,
+    status TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ปลดล็อกสิทธิ์ (RLS Policy) ให้แอปอ่าน/เขียนตาราง telemetry_history ได้
+ALTER TABLE public.telemetry_history ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public read/write history" ON public.telemetry_history;
+CREATE POLICY "Allow public read/write history" ON public.telemetry_history FOR ALL USING (true) WITH CHECK (true);
+"""
 }

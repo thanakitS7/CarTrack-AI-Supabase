@@ -79,4 +79,20 @@ interface AppDao {
 
     @Query("DELETE FROM location_history WHERE vehicleId = :vehicleId")
     suspend fun clearLocationHistory(vehicleId: String)
+
+    // Users
+    @Query("SELECT * FROM users")
+    fun getAllUsers(): Flow<List<UserEntity>>
+
+    @Query("SELECT * FROM users WHERE id = :userId")
+    fun getUserById(userId: String): Flow<UserEntity?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertUser(user: UserEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertUsers(users: List<UserEntity>)
+
+    @Query("DELETE FROM users WHERE id = :userId")
+    suspend fun deleteUser(userId: String)
 }
