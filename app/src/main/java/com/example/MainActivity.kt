@@ -61,6 +61,8 @@ import com.example.ui.screens.GeofenceRouteScreen
 import com.example.ui.screens.LiveTrackingScreen
 import com.example.ui.screens.LoginScreen
 import com.example.ui.screens.PlaybackScreen
+import com.example.ui.screens.VehicleSelectionScreen
+import androidx.compose.material.icons.filled.DirectionsCar
 import com.example.ui.theme.MyApplicationTheme
 
 class MainActivity : ComponentActivity() {
@@ -79,13 +81,27 @@ class MainActivity : ComponentActivity() {
 fun AutoGuardApp() {
     val viewModel: TrackingViewModel = viewModel()
     val currentUser by viewModel.currentUser.collectAsState()
+    val activeVehicle by viewModel.activeVehicle.collectAsState()
     var selectedScreen by remember { mutableStateOf("LIVE_MAP") }
+    var isVehicleSelected by remember { mutableStateOf(false) }
 
     if (currentUser == null) {
         LoginScreen(
             viewModel = viewModel,
             onLoginSuccess = {
+                isVehicleSelected = false
+            }
+        )
+    } else if (!isVehicleSelected) {
+        VehicleSelectionScreen(
+            viewModel = viewModel,
+            onVehicleConfirmed = { vehicle ->
+                isVehicleSelected = true
                 selectedScreen = "LIVE_MAP"
+            },
+            onLogout = {
+                viewModel.logout()
+                isVehicleSelected = false
             }
         )
     } else {
@@ -107,15 +123,18 @@ fun AutoGuardApp() {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
                             Surface(
                                 shape = CircleShape,
                                 color = roleColor.copy(alpha = 0.25f),
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier.size(34.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
@@ -126,22 +145,24 @@ fun AutoGuardApp() {
                                         },
                                         contentDescription = null,
                                         tint = roleColor,
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }
 
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
 
                             Column {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
                                         text = user.name,
                                         color = Color.White,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
                                     Surface(
                                         shape = RoundedCornerShape(4.dp),
                                         color = roleColor.copy(alpha = 0.3f)
@@ -156,28 +177,52 @@ fun AutoGuardApp() {
                                     }
                                 }
                                 Text(
-                                    text = "📍 ${user.provinceGroup} • 🏢 ${user.officeName}",
+                                    text = "🚗 ${activeVehicle?.licensePlate ?: "ยังไม่เลือก"} • 🏢 ${user.officeName}",
                                     color = Color(0xFF38BDF8),
-                                    fontSize = 11.sp
+                                    fontSize = 11.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
 
-                        OutlinedButton(
-                            onClick = { viewModel.logout() },
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = Color(0xFFF87171)
-                            ),
-                            modifier = Modifier.height(34.dp)
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.ExitToApp,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("สลับบัญชี", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            OutlinedButton(
+                                onClick = { isVehicleSelected = false },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = Color(0xFF38BDF8)
+                                ),
+                                modifier = Modifier.height(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DirectionsCar,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Text("สลับรถ", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            OutlinedButton(
+                                onClick = { viewModel.logout() },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = Color(0xFFF87171)
+                                ),
+                                modifier = Modifier.height(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ExitToApp,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Text("ออก", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }

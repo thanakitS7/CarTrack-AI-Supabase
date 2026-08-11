@@ -556,6 +556,12 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
         _isDeviatedTestMode.value = false
     }
 
+    fun resetDatabaseWithKhonKaenData() {
+        viewModelScope.launch {
+            repository.resetDatabaseWithKhonKaenData()
+        }
+    }
+
     fun toggleSimulation(enable: Boolean) {
         _isSimulating.value = enable
         if (enable) {

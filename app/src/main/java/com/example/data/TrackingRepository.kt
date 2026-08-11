@@ -18,7 +18,7 @@ class TrackingRepository(private val dao: AppDao) {
 
     suspend fun initializeSampleDataIfNeeded() = withContext(Dispatchers.IO) {
         val existing = dao.getAllVehicles().firstOrNull()
-        if (existing.isNullOrEmpty()) {
+        if (existing.isNullOrEmpty() || existing.none { it.officeName.contains("ขอนแก่น") }) {
             dao.insertVehicles(SampleData.INITIAL_VEHICLES)
             dao.insertRoutes(SampleData.INITIAL_ROUTES)
             dao.insertAlerts(SampleData.INITIAL_ALERTS)
@@ -42,6 +42,11 @@ class TrackingRepository(private val dao: AppDao) {
         if (existingUsers.isNullOrEmpty()) {
             dao.insertUsers(SampleData.INITIAL_USERS)
         }
+    }
+
+    suspend fun resetDatabaseWithKhonKaenData() = withContext(Dispatchers.IO) {
+        dao.insertVehicles(SampleData.INITIAL_VEHICLES)
+        dao.insertUsers(SampleData.INITIAL_USERS)
     }
 
     fun getVehicleFlow(vehicleId: String): Flow<VehicleEntity?> {
