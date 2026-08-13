@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CarTrack AI - Live Fleet & History Dashboard</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚗</text></svg>">
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- React, ReactDOM & Recharts CDN for Fleet Reports Chart -->
@@ -1185,18 +1186,17 @@
         async function fetchHistoryPointsForVehicle(vehicleId) {
             const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
             const headers = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
-            const tables = ['location_history', 'telemetry_history'];
 
-            for (const tbl of tables) {
-                try {
-                    const res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?vehicle_id=eq.${vehicleId}&order=created_at.asc&limit=300`, { headers });
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (Array.isArray(data) && data.length > 0) {
-                            return data.map(p => normalizeHistoryPoint(p));
-                        }
+            try {
+                const res = await fetch(`${cleanedUrl}/rest/v1/location_history?vehicle_id=eq.${vehicleId}&order=created_at.asc&limit=300`, { headers });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (Array.isArray(data)) {
+                        return data.map(p => normalizeHistoryPoint(p));
                     }
-                } catch (e) {}
+                }
+            } catch (e) {
+                console.warn("Fetch location history error:", e);
             }
             return [];
         }
@@ -1807,18 +1807,12 @@
                 const headers = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
 
                 let historyRecords = [];
-                const tables = ['location_history', 'telemetry_history'];
-                for (const tbl of tables) {
-                    try {
-                        const res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?created_at=gte.${startIso}&created_at=lte.${endIso}&order=created_at.asc&limit=10000`, { headers });
-                        if (res.ok) {
-                            const data = await res.json();
-                            if (Array.isArray(data) && data.length > 0) {
-                                historyRecords = data.map(p => normalizeHistoryPoint(p));
-                                break;
-                            }
-                        }
-                    } catch (e) {}
+                const res = await fetch(`${cleanedUrl}/rest/v1/location_history?created_at=gte.${startIso}&created_at=lte.${endIso}&order=created_at.asc&limit=10000`, { headers });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (Array.isArray(data)) {
+                        historyRecords = data.map(p => normalizeHistoryPoint(p));
+                    }
                 }
 
                 // Group points by vehicle_id
