@@ -2776,21 +2776,20 @@
                     },
                     body: JSON.stringify({
                         name: vn,
-                        vehicle_name: vn,
                         licenseplate: lp,
-                        license_plate: lp,
                         drivername: dn,
-                        driver_name: dn,
                         officename: on,
                         office_name: on,
                         provincegroup: pg,
-                        province_group: pg,
-                        is_active: st
+                        province_group: pg
                     })
                 });
 
                 if (!resp.ok) {
-                    console.warn("Supabase update returned status:", resp.status);
+                    const txt = await resp.text();
+                    console.warn("Supabase update error:", resp.status, txt);
+                    alert(`ไม่สามารถบันทึกไปยัง Supabase ได้ (HTTP ${resp.status}): ${txt}`);
+                    return;
                 }
 
                 editingVehicleId = null;
@@ -2799,10 +2798,7 @@
                 alert("บันทึกข้อมูลยานพาหนะลงในฐานข้อมูล Supabase สำเร็จเรียบร้อย");
             } catch (err) {
                 console.error("Save vehicle error:", err);
-                alert("บันทึกข้อมูลเรียบร้อยแล้ว");
-                editingVehicleId = null;
-                renderAdminVehicleList();
-                updateUI(vehiclesData);
+                alert("เกิดข้อผิดพลาดในการเชื่อมต่อ Supabase");
             }
         }
 
@@ -2862,30 +2858,22 @@
             const newId = "V" + Math.floor(100 + Math.random() * 900);
             const vehiclePayload = {
                 id: newId,
-                vehicle_id: newId,
                 name: vn.trim(),
-                vehicle_name: vn.trim(),
                 licenseplate: lp.trim(),
-                license_plate: lp.trim(),
                 modelyear: "2024",
                 status: "STOPPED",
                 currentlat: 16.4322,
                 currentlng: 102.8236,
-                latitude: 16.4322,
-                longitude: 102.8236,
                 speedkmh: 0,
-                speed: 0,
                 headingbearing: 0,
-                heading: 0,
                 fuelpercent: 100,
                 batteryvoltage: 12.5,
                 drivername: dn.trim(),
-                driver_name: dn.trim(),
                 officename: on.trim(),
                 office_name: on.trim(),
+                postal_code: "40000",
                 provincegroup: pg.trim(),
-                province_group: pg.trim(),
-                is_active: true
+                province_group: pg.trim()
             };
 
             try {

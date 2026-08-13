@@ -345,11 +345,8 @@
                     },
                     body: JSON.stringify({
                         name: vName,
-                        vehicle_name: vName,
                         licenseplate: plate,
-                        license_plate: plate,
                         drivername: driver,
-                        driver_name: driver,
                         officename: office,
                         office_name: office,
                         provincegroup: province,
@@ -382,9 +379,7 @@
             const vehiclePayload = {
                 id: newId,
                 name: vn.trim(),
-                vehicle_name: vn.trim(),
                 licenseplate: lp.trim(),
-                license_plate: lp.trim(),
                 modelyear: "2024",
                 status: "STOPPED",
                 currentlat: 16.4322,
@@ -394,9 +389,9 @@
                 fuelpercent: 100,
                 batteryvoltage: 12.5,
                 drivername: dn.trim(),
-                driver_name: dn.trim(),
                 officename: on.trim(),
                 office_name: on.trim(),
+                postal_code: "40000",
                 provincegroup: pg.trim(),
                 province_group: pg.trim()
             };
