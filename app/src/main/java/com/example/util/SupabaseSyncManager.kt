@@ -268,6 +268,7 @@ object SupabaseSyncManager {
                         .post(body)
                         .build()
 
+                    var shouldBreakLoop = false
                     client.newCall(request).execute().use { resp ->
                         val respStr = resp.body?.string() ?: ""
                         if (resp.isSuccessful) {
@@ -295,10 +296,11 @@ object SupabaseSyncManager {
                                 currentObj.remove("created_at")
                             } else {
                                 Log.w("SupabaseSync", "ไม่สามารถเพิ่มข้อมูลลง $table: HTTP ${resp.code} $respStr")
-                                break
+                                shouldBreakLoop = true
                             }
                         }
                     }
+                    if (shouldBreakLoop) break
                 }
             }
         } catch (e: Exception) {
@@ -360,6 +362,7 @@ object SupabaseSyncManager {
                     .post(body)
                     .build()
 
+                var shouldBreakLoop = false
                 client.newCall(request).execute().use { resp ->
                     val respStr = resp.body?.string() ?: ""
                     if (resp.isSuccessful) {
@@ -384,10 +387,11 @@ object SupabaseSyncManager {
                             currentObj.remove("id")
                         } else {
                             Log.w("SupabaseSync", "ไม่สามารถเพิ่มข้อมูลลง vehicle_usage_logs: HTTP ${resp.code} $respStr")
-                            break
+                            shouldBreakLoop = true
                         }
                     }
                 }
+                if (shouldBreakLoop) break
             }
         } catch (e: Exception) {
             Log.w("SupabaseSync", "Error logging vehicle usage: ${e.message}")
