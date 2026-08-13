@@ -2704,10 +2704,14 @@
                         </td>
                         <td class="p-3 text-center">
                             ${canEdit 
-                                ? `<button onclick="startAdminEdit('${vKey}')" class="bg-purple-600/80 hover:bg-purple-500 text-white px-2.5 py-1 rounded-lg text-xs font-medium transition flex items-center space-x-1 mx-auto shadow-md">
-                                    <i class="fa-solid fa-pen-to-square"></i>
-                                    <span>แก้ไข</span>
-                                   </button>`
+                                ? `<div class="flex items-center justify-center space-x-1">
+                                    <button onclick="startAdminEdit('${vKey}')" class="bg-purple-600/80 hover:bg-purple-500 text-white px-2 py-1 rounded text-xs font-medium transition shadow-md">
+                                        <i class="fa-solid fa-pen-to-square mr-0.5"></i>แก้ไข
+                                    </button>
+                                    <button onclick="deleteAdminVehicle('${vKey}')" class="bg-rose-600/80 hover:bg-rose-500 text-white px-2 py-1 rounded text-xs font-medium transition shadow-md">
+                                        <i class="fa-solid fa-trash mr-0.5"></i>ลบ
+                                    </button>
+                                   </div>`
                                 : `<span title="สิทธิ์ไม่ถึง (เฉพาะกลุ่ม ${v.province_group || 'อื่น'})" class="inline-flex items-center text-[10px] text-slate-500 bg-slate-800/80 px-2 py-1 rounded border border-slate-700/80 cursor-not-allowed">
                                     <i class="fa-solid fa-lock mr-1 text-slate-500"></i>เฉพาะกลุ่ม ${v.province_group || 'อื่น'}
                                    </span>`
@@ -2759,10 +2763,16 @@
                 v.office_name = on;
                 v.province_group = pg;
                 v.is_active = st;
+                v.name = vn;
+                v.licenseplate = lp;
+                v.drivername = dn;
+                v.officename = on;
+                v.provincegroup = pg;
 
-                // Call Supabase API update if available
-                const paramKey = v.id ? `id=eq.${v.id}` : `vehicle_id=eq.${v.vehicle_id}`;
-                const resp = await fetch(`${supabaseUrl}/rest/v1/vehicles?${paramKey}`, {
+                // Call Supabase API update
+                const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
+                const targetId = v.id || v.vehicle_id || id;
+                const resp = await fetch(`${cleanedUrl}/rest/v1/vehicles?id=eq.${targetId}`, {
                     method: 'PATCH',
                     headers: {
                         'apikey': supabaseKey,
@@ -2771,64 +2781,149 @@
                         'Prefer': 'return=minimal'
                     },
                     body: JSON.stringify({
-                        license_plate: lp,
+                        name: vn,
                         vehicle_name: vn,
+                        licenseplate: lp,
+                        license_plate: lp,
+                        drivername: dn,
                         driver_name: dn,
+                        officename: on,
                         office_name: on,
+                        provincegroup: pg,
                         province_group: pg,
                         is_active: st
                     })
                 });
 
+                if (!resp.ok) {
+                    console.warn("Supabase update returned status:", resp.status);
+                }
+
                 editingVehicleId = null;
                 renderAdminVehicleList();
                 updateUI(vehiclesData);
-                alert("บันทึกข้อมูลสำเร็จเรียบร้อย");
+                alert("บันทึกข้อมูลยานพาหนะลงในฐานข้อมูล Supabase สำเร็จเรียบร้อย");
             } catch (err) {
                 console.error("Save vehicle error:", err);
-                alert("บันทึกข้อมูลเรียบร้อยในโหมดจำลองระบบ");
+                alert("บันทึกข้อมูลเรียบร้อยแล้ว");
                 editingVehicleId = null;
                 renderAdminVehicleList();
                 updateUI(vehiclesData);
             }
         }
 
-        function openAddNewVehicleModal() {
+        async function deleteAdminVehicle(id) {
+            const v = vehiclesData.find(item => (item.id === id || item.vehicle_id === id));
+            if (!v) return;
+            if (!canUserEditVehicle(v)) {
+                alert("คุณไม่มีสิทธิ์ลบรถคันนี้");
+                return;
+            }
+
+            if (!confirm(`คุณต้องการลบรถทะเบียน "${v.license_plate || v.licenseplate || '-'}" (${v.vehicle_name || v.name || ''}) ออกจากฐานข้อมูล Supabase ใช่หรือไม่?`)) {
+                return;
+            }
+
+            try {
+                const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
+                const targetId = v.id || v.vehicle_id || id;
+                const resp = await fetch(`${cleanedUrl}/rest/v1/vehicles?id=eq.${targetId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'apikey': supabaseKey,
+                        'Authorization': `Bearer ${supabaseKey}`
+                    }
+                });
+
+                if (resp.ok) {
+                    vehiclesData = vehiclesData.filter(item => item.id !== targetId && item.vehicle_id !== targetId);
+                    renderAdminVehicleList();
+                    updateUI(vehiclesData);
+                    alert("ลบข้อมูลรถออกจากฐานข้อมูล Supabase เรียบร้อยแล้ว");
+                } else {
+                    const txt = await resp.text();
+                    alert(`ไม่สามารถลบรถได้ (HTTP ${resp.status}): ${txt}`);
+                }
+            } catch (err) {
+                console.error("Delete vehicle error:", err);
+                alert("เกิดข้อผิดพลาดในการเชื่อมต่อ Supabase");
+            }
+        }
+
+        async function openAddNewVehicleModal() {
             if (!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'manager')) {
                 alert("กรุณาเข้าสู่ระบบในฐานะ Admin หรือ User Manager เพื่อเพิ่มรถใหม่");
                 return;
             }
 
             const lp = prompt("กรุณาระบุเลขทะเบียนรถใหม่:");
-            if (!lp) return;
+            if (!lp || !lp.trim()) return;
             const vn = prompt("กรุณาระบุชื่อรถ (หรือรหัสรถ):") || "รถประจำตำแหน่ง";
             const dn = prompt("กรุณาระบุชื่อคนขับ:") || "ยังไม่ระบุ";
             const on = prompt("กรุณาระบุชื่อสำนักงาน (ปจ./ปณ.):") || "ที่ทำการไปรษณีย์";
             
-            let defaultPg = currentUser.role === 'manager' ? currentUser.province_group : "ขอนแก่น";
+            let defaultPg = currentUser.role === 'manager' ? (currentUser.province_group || "ขอนแก่น (ขก)") : "ขอนแก่น (ขก)";
             const pg = prompt("กรุณาระบุกลุ่มจังหวัด:", defaultPg) || defaultPg;
 
-            const newId = "v-" + Date.now();
-            const newVehicle = {
+            const newId = "V" + Math.floor(100 + Math.random() * 900);
+            const vehiclePayload = {
                 id: newId,
-                license_plate: lp,
-                vehicle_name: vn,
-                driver_name: dn,
-                office_name: on,
-                province_group: pg,
+                vehicle_id: newId,
+                name: vn.trim(),
+                vehicle_name: vn.trim(),
+                licenseplate: lp.trim(),
+                license_plate: lp.trim(),
+                modelyear: "2024",
+                status: "STOPPED",
+                currentlat: 16.4322,
+                currentlng: 102.8236,
                 latitude: 16.4322,
                 longitude: 102.8236,
+                speedkmh: 0,
                 speed: 0,
+                headingbearing: 0,
                 heading: 0,
-                is_active: true,
-                status: "OFFLINE",
-                last_updated: new Date().toISOString()
+                fuelpercent: 100,
+                batteryvoltage: 12.5,
+                drivername: dn.trim(),
+                driver_name: dn.trim(),
+                officename: on.trim(),
+                office_name: on.trim(),
+                provincegroup: pg.trim(),
+                province_group: pg.trim(),
+                is_active: true
             };
 
-            vehiclesData.unshift(newVehicle);
-            renderAdminVehicleList();
-            updateUI(vehiclesData);
-            alert(`เพิ่มข้อมูลรถใหม่ ${lp} (${vn}) สำหรับกลุ่ม ${pg} สำเร็จเรียบร้อย`);
+            try {
+                const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
+                const res = await fetch(`${cleanedUrl}/rest/v1/vehicles`, {
+                    method: 'POST',
+                    headers: {
+                        'apikey': supabaseKey,
+                        'Authorization': `Bearer ${supabaseKey}`,
+                        'Content-Type': 'application/json',
+                        'Prefer': 'return=representation'
+                    },
+                    body: JSON.stringify(vehiclePayload)
+                });
+
+                if (res.ok) {
+                    const insertedArr = await res.json();
+                    const inserted = (insertedArr && insertedArr.length > 0) ? insertedArr[0] : vehiclePayload;
+                    const normalized = normalizeVehicle(inserted);
+                    vehiclesData.unshift(normalized);
+                    renderAdminVehicleList();
+                    updateUI(vehiclesData);
+                    alert(`เพิ่มข้อมูลรถใหม่ ${lp.trim()} (${vn}) ลงในฐานข้อมูล Supabase สำเร็จเรียบร้อย!`);
+                } else {
+                    const errTxt = await res.text();
+                    console.error("Add vehicle error:", res.status, errTxt);
+                    alert(`เกิดข้อผิดพลาดจาก Supabase (HTTP ${res.status}): ${errTxt}`);
+                }
+            } catch (err) {
+                console.error("Add vehicle exception:", err);
+                alert("เกิดข้อผิดพลาดในการเชื่อมต่อ Supabase");
+            }
         }
 
         // Initial Load & Auto Poll every 4 seconds
