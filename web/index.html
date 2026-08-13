@@ -1185,7 +1185,7 @@
         async function fetchHistoryPointsForVehicle(vehicleId) {
             const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
             const headers = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
-            const tables = ['telemetry_history', 'location_history'];
+            const tables = ['location_history', 'telemetry_history'];
 
             for (const tbl of tables) {
                 try {
@@ -1807,7 +1807,7 @@
                 const headers = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
 
                 let historyRecords = [];
-                const tables = ['telemetry_history', 'location_history'];
+                const tables = ['location_history', 'telemetry_history'];
                 for (const tbl of tables) {
                     try {
                         const res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?created_at=gte.${startIso}&created_at=lte.${endIso}&order=created_at.asc&limit=10000`, { headers });
