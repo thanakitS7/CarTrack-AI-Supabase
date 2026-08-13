@@ -20,16 +20,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DirectionsCar
-import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.LocalShipping
-import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -58,6 +57,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.VehicleEntity
@@ -76,31 +76,63 @@ fun VehicleSelectionScreen(
 
     val user = currentUser ?: return
 
-    var filterScope by remember { mutableStateOf("OFFICE") } // "OFFICE", "PROVINCE", "ALL"
+    var filterScope by remember { mutableStateOf("OFFICE") } // "OFFICE", "ALL"
     var searchQuery by remember { mutableStateOf("") }
     var showAddVehicleDialog by remember { mutableStateOf(false) }
 
     // Dialog form state for new vehicle
     var newVehicleName by remember { mutableStateOf("") }
     var newLicensePlate by remember { mutableStateOf("") }
-    var newModelYear by remember { mutableStateOf("2024") }
     var newDriverName by remember { mutableStateOf(user.name) }
 
-    // Filter logic
+    // Office matching helper: Flexible match for office names, postal codes & roles
+    fun isMatchingOffice(user: com.example.data.UserEntity, vehicle: com.example.data.VehicleEntity): Boolean {
+        val userPostal = user.postalCode.trim()
+        val vehiclePostal = vehicle.postalCode.trim()
+
+        // 1. If both have non-blank postal codes, strict check on postal code
+        if (userPostal.isNotBlank() && vehiclePostal.isNotBlank()) {
+            return userPostal == vehiclePostal
+        }
+
+        // 2. Normalize and check office names
+        val u = user.officeName.trim().lowercase()
+        val v = vehicle.officeName.trim().lowercase()
+
+        if (u.isBlank() || v.isBlank()) {
+            // Fallback to province group if office names are blank
+            if (user.provinceGroup.isNotBlank() && vehicle.provinceGroup.isNotBlank()) {
+                val uProv = user.provinceGroup.replace(Regex("\\(.*\\)"), "").trim()
+                val vProv = vehicle.provinceGroup.replace(Regex("\\(.*\\)"), "").trim()
+                return uProv == vProv || uProv.contains(vProv) || vProv.contains(uProv)
+            }
+            return false
+        }
+
+        val cleanRegex = Regex("(ปณ\\.|ศป\\.|ศูนย์ไปรษณีย์|ที่ทำการไปรษณีย์|ที่ทำการ|เขต\\s*\\d*|เมือง)")
+        val uClean = u.replace(cleanRegex, "").trim()
+        val vClean = v.replace(cleanRegex, "").trim()
+
+        if (uClean.isNotEmpty() && vClean.isNotEmpty()) {
+            if (uClean == vClean || uClean.contains(vClean) || vClean.contains(uClean)) {
+                return true
+            }
+        }
+
+        val keywords = listOf("ขอนแก่น", "น้ำพอง", "อุดร", "โคราช", "นครราชสีมา", "อุบล")
+        for (kw in keywords) {
+            if (u.contains(kw) && v.contains(kw)) return true
+        }
+
+        return false
+    }
+
+    // Filter logic: Filter by office (or show all if ALL is selected)
     val filteredVehicles = allVehicles.filter { vehicle ->
-        val matchesScope = when (filterScope) {
-            "OFFICE" -> {
-                val uOffice = user.officeName.trim()
-                val vOffice = vehicle.officeName.trim()
-                vOffice.contains(uOffice, ignoreCase = true) || uOffice.contains(vOffice, ignoreCase = true) ||
-                        (uOffice.contains("ขอนแก่น") && vOffice.contains("ขอนแก่น"))
-            }
-            "PROVINCE" -> {
-                val uProv = user.provinceGroup.replace("\\s*\\(.*\\)".toRegex(), "").trim()
-                val vProv = vehicle.provinceGroup.replace("\\s*\\(.*\\)".toRegex(), "").trim()
-                vProv.contains(uProv, ignoreCase = true) || uProv.contains(vProv, ignoreCase = true)
-            }
-            else -> true
+        val matchesScope = if (filterScope == "ALL") {
+            true
+        } else {
+            isMatchingOffice(user, vehicle)
         }
 
         val matchesSearch = searchQuery.isBlank() ||
@@ -128,76 +160,77 @@ fun VehicleSelectionScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
+                .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
-            // User Welcome Header
+            // Compact Header Bar
             Card(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF182232)),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+                    .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.3f), RoundedCornerShape(12.dp))
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
                         Surface(
                             shape = CircleShape,
                             color = Color(0xFF38BDF8).copy(alpha = 0.2f),
-                            modifier = Modifier.size(48.dp)
+                            modifier = Modifier.size(36.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.Person,
                                     contentDescription = null,
                                     tint = Color(0xFF38BDF8),
-                                    modifier = Modifier.size(28.dp)
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
 
-                        Spacer(modifier = Modifier.width(12.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
 
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     text = user.name,
                                     color = Color.White,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Surface(
-                                    shape = RoundedCornerShape(6.dp),
+                                    shape = RoundedCornerShape(4.dp),
                                     color = Color(0xFF10B981).copy(alpha = 0.25f)
                                 ) {
                                     Text(
                                         text = user.role,
                                         color = Color(0xFF10B981),
-                                        fontSize = 10.sp,
+                                        fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                                     )
                                 }
                             }
-                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "🏢 สังกัด: ${user.officeName}",
+                                text = "🏢 ${user.officeName}",
                                 color = Color(0xFF38BDF8),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = "📍 กลุ่มจังหวัด: ${user.provinceGroup}",
-                                color = Color.LightGray,
-                                fontSize = 11.sp
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -206,94 +239,88 @@ fun VehicleSelectionScreen(
                         onClick = onLogout,
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFF87171)),
-                        modifier = Modifier.height(36.dp)
+                        modifier = Modifier.height(32.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp)
                     ) {
-                        Icon(Icons.Default.ExitToApp, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("ออกจากระบบ", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("ออก", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Title & Instruction
-            Text(
-                text = "🚚 เลือกยานพาหนะสำหรับปฏิบัติงาน",
-                color = Color.White,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "ระบบกรองเฉพาะรถประจำที่ทำการ '${user.officeName}' เป็นหลัก",
-                color = Color(0xFF94A3B8),
-                fontSize = 12.sp
-            )
-
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Filter Chips
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                FilterChip(
-                    selected = filterScope == "OFFICE",
-                    onClick = { filterScope = "OFFICE" },
-                    label = { Text("🏢 ที่ทำการนี้ (${user.officeName})", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Color(0xFF6750A4),
-                        selectedLabelColor = Color.White,
-                        containerColor = Color(0xFF1E293B),
-                        labelColor = Color.LightGray
-                    )
-                )
-
-                FilterChip(
-                    selected = filterScope == "PROVINCE",
-                    onClick = { filterScope = "PROVINCE" },
-                    label = { Text("📍 กลุ่มจังหวัด", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Color(0xFF0284C7),
-                        selectedLabelColor = Color.White,
-                        containerColor = Color(0xFF1E293B),
-                        labelColor = Color.LightGray
-                    )
-                )
-
-                FilterChip(
-                    selected = filterScope == "ALL",
-                    onClick = { filterScope = "ALL" },
-                    label = { Text("🌐 ทั้งหมด (${allVehicles.size})", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Color(0xFF475569),
-                        selectedLabelColor = Color.White,
-                        containerColor = Color(0xFF1E293B),
-                        labelColor = Color.LightGray
-                    )
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Search Box & Action Buttons Row
+            // Screen Title & Office Scope Info
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "🚚 เลือกยานพาหนะ",
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "สังกัด ${user.officeName} (${filteredVehicles.size} คัน)",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    FilterChip(
+                        selected = filterScope == "OFFICE",
+                        onClick = { filterScope = "OFFICE" },
+                        label = { Text("เฉพาะที่ทำการนี้", fontSize = 10.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFF0284C7),
+                            selectedLabelColor = Color.White,
+                            containerColor = Color(0xFF1E293B),
+                            labelColor = Color.LightGray
+                        ),
+                        modifier = Modifier.height(28.dp)
+                    )
+                    FilterChip(
+                        selected = filterScope == "ALL",
+                        onClick = { filterScope = "ALL" },
+                        label = { Text("ทั้งหมด (${allVehicles.size})", fontSize = 10.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFF475569),
+                            selectedLabelColor = Color.White,
+                            containerColor = Color(0xFF1E293B),
+                            labelColor = Color.LightGray
+                        ),
+                        modifier = Modifier.height(28.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Search Bar & Actions
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("ค้นหา ทะเบียน / ชื่อรถ / คนขับ...", fontSize = 12.sp) },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF94A3B8)) },
+                    placeholder = { Text("ค้นหาทะเบียน/ชื่อรถ/คนขับ...", fontSize = 11.sp) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp)) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
                         focusedBorderColor = Color(0xFF38BDF8),
                         unfocusedBorderColor = Color(0xFF334155)
                     ),
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp),
                     singleLine = true
                 )
 
@@ -301,78 +328,80 @@ fun VehicleSelectionScreen(
                     onClick = { showAddVehicleDialog = true },
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-                    modifier = Modifier.height(52.dp)
+                    modifier = Modifier.height(44.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("เพิ่มรถ", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text("เพิ่มรถ", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
 
                 IconButton(
                     onClick = {
                         viewModel.resetDatabaseWithKhonKaenData()
-                        Toast.makeText(context, "รีเซ็ตข้อมูลรถประจำ ปณ.ขอนแก่น เรียบร้อยแล้ว", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "รีเซ็ตข้อมูลรถประจำ ${user.officeName} เรียบร้อยแล้ว", Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier
-                        .size(52.dp)
+                        .size(44.dp)
                         .background(Color(0xFF334155), RoundedCornerShape(8.dp))
                 ) {
-                    Icon(Icons.Default.Refresh, contentDescription = "รีเซ็ตข้อมูล", tint = Color.White)
+                    Icon(Icons.Default.Refresh, contentDescription = "รีเซ็ต", tint = Color.White, modifier = Modifier.size(18.dp))
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // Vehicles List
+            // Compact Vehicles List
             if (filteredVehicles.isEmpty()) {
                 Card(
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF182232)),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 16.dp)
+                        .padding(top = 12.dp)
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(24.dp),
+                            .padding(20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Icon(
                             imageVector = Icons.Default.DirectionsCar,
                             contentDescription = null,
                             tint = Color.Gray,
-                            modifier = Modifier.size(48.dp)
+                            modifier = Modifier.size(40.dp)
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "ไม่พบรายการรถในเงื่อนไขการค้นหา",
+                            text = "ไม่พบรถสังกัดที่ทำการ '${user.officeName}'",
                             color = Color.White,
-                            fontSize = 14.sp,
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "กดปุ่ม 'เพิ่มรถ' ด้านบน หรือกด 'รีเซ็ตข้อมูล' เพื่อโหลดรถ ปณ.ขอนแก่น เข้าสู่ระบบ",
+                            text = "กด '+ เพิ่มรถ' เพื่อเพิ่มรถคันใหม่ หรือกดปุ่มรีเซ็ตเพื่อโหลดรถสาธิต",
                             color = Color(0xFF94A3B8),
                             fontSize = 11.sp,
                             textAlign = TextAlign.Center
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
                         Button(
                             onClick = {
                                 viewModel.resetDatabaseWithKhonKaenData()
-                                Toast.makeText(context, "เพิ่มรถ ปณ.ขอนแก่น สำเร็จ!", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "โหลดรถสาธิตเรียบร้อย!", Toast.LENGTH_SHORT).show()
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38BDF8))
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38BDF8)),
+                            modifier = Modifier.height(36.dp)
                         ) {
-                            Text("⚡ โหลดรถสาธิต ปณ.ขอนแก่น", color = Color.Black, fontWeight = FontWeight.Bold)
+                            Text("⚡ โหลดรถสาธิต ${user.officeName}", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             } else {
                 LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.weight(1f)
                 ) {
                     items(filteredVehicles, key = { it.id }) { vehicle ->
@@ -385,7 +414,7 @@ fun VehicleSelectionScreen(
                         }
 
                         Card(
-                            shape = RoundedCornerShape(16.dp),
+                            shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(
                                 containerColor = if (isSelected) Color(0xFF1E293B) else Color(0xFF131C2A)
                             ),
@@ -394,144 +423,132 @@ fun VehicleSelectionScreen(
                                 .border(
                                     width = if (isSelected) 2.dp else 1.dp,
                                     color = if (isSelected) Color(0xFF10B981) else Color(0xFF334155),
-                                    shape = RoundedCornerShape(16.dp)
+                                    shape = RoundedCornerShape(12.dp)
                                 )
                                 .clickable {
                                     viewModel.selectVehicle(vehicle.id)
                                     onVehicleConfirmed(vehicle)
                                 }
                         ) {
-                            Column(
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(14.dp)
+                                    .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    modifier = Modifier.weight(1f)
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Surface(
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = statusColor.copy(alpha = 0.2f),
-                                            modifier = Modifier.padding(end = 10.dp)
-                                        ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = statusColor.copy(alpha = 0.2f),
+                                        modifier = Modifier.size(40.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
                                             Icon(
                                                 imageVector = Icons.Default.LocalShipping,
                                                 contentDescription = null,
                                                 tint = statusColor,
-                                                modifier = Modifier
-                                                    .padding(8.dp)
-                                                    .size(24.dp)
+                                                modifier = Modifier.size(22.dp)
                                             )
-                                        }
-
-                                        Column {
-                                            Text(
-                                                text = vehicle.name,
-                                                color = Color.White,
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Surface(
-                                                    shape = RoundedCornerShape(4.dp),
-                                                    color = Color(0xFF38BDF8).copy(alpha = 0.25f)
-                                                ) {
-                                                    Text(
-                                                        text = "ทะเบียน: ${vehicle.licensePlate}",
-                                                        color = Color(0xFF38BDF8),
-                                                        fontSize = 11.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                    )
-                                                }
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text(
-                                                    text = "ปี ${vehicle.modelYear}",
-                                                    color = Color.Gray,
-                                                    fontSize = 11.sp
-                                                )
-                                            }
                                         }
                                     }
 
-                                    Surface(
-                                        shape = RoundedCornerShape(20.dp),
-                                        color = statusColor.copy(alpha = 0.2f)
-                                    ) {
+                                    Spacer(modifier = Modifier.width(10.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = when (vehicle.status.uppercase()) {
-                                                "MOVING" -> "🟢 วิ่งอยู่ (${vehicle.speedKmh} km/h)"
-                                                "IDLE" -> "🟡 จอดติดเครื่อง"
-                                                "STOPPED" -> "🔴 ดับเครื่อง"
-                                                else -> "⚪ ไม่ทราบสถานะ"
-                                            },
-                                            color = statusColor,
-                                            fontSize = 10.sp,
+                                            text = vehicle.name,
+                                            color = Color.White,
+                                            fontSize = 13.sp,
                                             fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = Color(0xFF38BDF8).copy(alpha = 0.2f)
+                                            ) {
+                                                Text(
+                                                    text = vehicle.licensePlate,
+                                                    color = Color(0xFF38BDF8),
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "👤 ${vehicle.driverName}",
+                                                color = Color(0xFFCBD5E1),
+                                                fontSize = 10.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = "🏢 ${vehicle.officeName}",
+                                            color = Color(0xFF64748B),
+                                            fontSize = 9.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.height(10.dp))
-
-                                // Details info row
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(Color(0xFF0F172A), RoundedCornerShape(8.dp))
-                                        .padding(8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                Column(
+                                    horizontalAlignment = Alignment.End,
+                                    modifier = Modifier.padding(start = 6.dp)
                                 ) {
-                                    Text(
-                                        text = "🏢 ${vehicle.officeName}",
-                                        color = Color(0xFFE2E8F0),
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Text(
-                                        text = "👤 คนขับ: ${vehicle.driverName}",
-                                        color = Color(0xFF38BDF8),
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Text(
-                                        text = "⛽ น้ำมัน: ${vehicle.fuelPercent}%",
-                                        color = Color(0xFFF59E0B),
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                }
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = statusColor.copy(alpha = 0.2f)
+                                    ) {
+                                        Text(
+                                            text = when (vehicle.status.uppercase()) {
+                                                "MOVING" -> "🟢 วิ่งอยู่"
+                                                "IDLE" -> "🟡 จอดดับเครื่อง"
+                                                "STOPPED" -> "🔴 จอดนิ่ง"
+                                                else -> "⚪ ไม่ทราบ"
+                                            },
+                                            color = statusColor,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
 
-                                Spacer(modifier = Modifier.height(10.dp))
+                                    Spacer(modifier = Modifier.height(6.dp))
 
-                                Button(
-                                    onClick = {
-                                        viewModel.selectVehicle(vehicle.id)
-                                        onVehicleConfirmed(vehicle)
-                                    },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(42.dp),
-                                    shape = RoundedCornerShape(8.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (isSelected) Color(0xFF10B981) else Color(0xFF6750A4)
-                                    )
-                                ) {
-                                    Icon(
-                                        imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Default.DirectionsCar,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = if (isSelected) "กำลังเลือกคันนี้ (คลิกเพื่อเข้าสู่หน้างาน)" else "เลือกรถคันนี้เพื่อเริ่มงาน",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                    Button(
+                                        onClick = {
+                                            viewModel.selectVehicle(vehicle.id)
+                                            onVehicleConfirmed(vehicle)
+                                        },
+                                        shape = RoundedCornerShape(6.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (isSelected) Color(0xFF10B981) else Color(0xFF0284C7)
+                                        ),
+                                        modifier = Modifier.height(28.dp),
+                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isSelected) Icons.Default.Check else Icons.Default.ChevronRight,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Text(
+                                            text = if (isSelected) "เลือกอยู่" else "เลือก",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -547,18 +564,18 @@ fun VehicleSelectionScreen(
             onDismissRequest = { showAddVehicleDialog = false },
             title = {
                 Text(
-                    text = "➕ เพิ่มรถใหม่เข้าที่ทำการ ${user.officeName}",
-                    fontSize = 16.sp,
+                    text = "➕ เพิ่มรถเข้าสังกัด ${user.officeName}",
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = newVehicleName,
                         onValueChange = { newVehicleName = it },
-                        label = { Text("ชื่อเรียก/รุ่นรถ (เช่น รถตู้ส่งด่วน EMS)") },
+                        label = { Text("ชื่อ/รุ่นรถ (เช่น รถตู้ส่งด่วน EMS)", fontSize = 11.sp) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White
@@ -569,7 +586,7 @@ fun VehicleSelectionScreen(
                     OutlinedTextField(
                         value = newLicensePlate,
                         onValueChange = { newLicensePlate = it },
-                        label = { Text("เลขทะเบียนรถ (เช่น ผก-8899 ขก)") },
+                        label = { Text("ทะเบียนรถ (เช่น ผก-8899 ขก)", fontSize = 11.sp) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White
@@ -580,7 +597,7 @@ fun VehicleSelectionScreen(
                     OutlinedTextField(
                         value = newDriverName,
                         onValueChange = { newDriverName = it },
-                        label = { Text("ชื่อพนักงานขับรถประจำคัน") },
+                        label = { Text("ชื่อคนขับประจำรถ", fontSize = 11.sp) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White
@@ -589,7 +606,7 @@ fun VehicleSelectionScreen(
                     )
 
                     Text(
-                        text = "🏢 สังกัดที่ทำการ: ${user.officeName} (${user.provinceGroup})",
+                        text = "🏢 สังกัด: ${user.officeName}",
                         color = Color(0xFF38BDF8),
                         fontSize = 11.sp
                     )
@@ -602,28 +619,33 @@ fun VehicleSelectionScreen(
                             Toast.makeText(context, "กรุณากรอกชื่อและทะเบียนรถ", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
+                        val addedName = newVehicleName
                         viewModel.addNewVehicle(
                             name = newVehicleName,
                             licensePlate = newLicensePlate,
                             modelYear = "2024",
                             driverName = newDriverName,
                             officeName = user.officeName,
+                            postalCode = user.postalCode,
                             provinceGroup = user.provinceGroup
                         )
+                        newVehicleName = ""
+                        newLicensePlate = ""
                         showAddVehicleDialog = false
-                        Toast.makeText(context, "เพิ่มรถใหม่เข้าที่ทำการสำเร็จ!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "เพิ่มรถ $addedName บันทึกลงฐานข้อมูลแล้ว!", Toast.LENGTH_SHORT).show()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
                 ) {
-                    Text("บันทึกข้อมูล", fontWeight = FontWeight.Bold)
+                    Text("บันทึก", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showAddVehicleDialog = false }) {
-                    Text("ยกเลิก", color = Color.Gray)
+                    Text("ยกเลิก", color = Color.Gray, fontSize = 12.sp)
                 }
             },
             containerColor = Color(0xFF182232)
         )
     }
 }
+

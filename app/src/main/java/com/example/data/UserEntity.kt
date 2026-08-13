@@ -13,6 +13,7 @@ data class UserEntity(
     val phone: String = "",
     val password: String = "123456",
     val officeName: String = "ปณ.เมืองขอนแก่น",
+    val postalCode: String = "40000",
     val provinceGroup: String = "ขอนแก่น (ขก)",
     val assignedVehicleId: String = "",
     val status: String = "ACTIVE",

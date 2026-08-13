@@ -117,6 +117,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
 
     private var simulationJob: Job? = null
     private var playbackJob: Job? = null
+    private var activeTripSyncJob: Job? = null
 
     // Combined active vehicle state
     val activeVehicle = combine(allVehicles, _selectedVehicleId) { vehicles, id ->
@@ -339,6 +340,9 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                                 vehicleName = vehicle.name,
                                 licensePlate = vehicle.licensePlate,
                                 driverName = vehicle.driverName,
+                                officeName = vehicle.officeName,
+                                postalCode = vehicle.postalCode,
+                                provinceGroup = vehicle.provinceGroup,
                                 status = currentStatus,
                                 latitude = lat,
                                 longitude = lng,
@@ -420,6 +424,9 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                         vehicleName = vehicle.name,
                         licensePlate = vehicle.licensePlate,
                         driverName = vehicle.driverName,
+                        officeName = vehicle.officeName,
+                        postalCode = vehicle.postalCode,
+                        provinceGroup = vehicle.provinceGroup,
                         status = currentStatus,
                         latitude = vehicle.currentLat,
                         longitude = vehicle.currentLng,
@@ -427,6 +434,66 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                         fuelPercent = vehicle.fuelPercent,
                         batteryVoltage = vehicle.batteryVoltage
                     )
+                }
+
+                if (_isGoogleSheetsSyncEnabled.value) {
+                    com.example.util.GoogleSheetsSyncManager.sendTelemetryToGoogleSheets(
+                        webhookUrl = _googleSheetsUrl.value,
+                        vehicleId = vehicle.id,
+                        vehicleName = vehicle.name,
+                        licensePlate = vehicle.licensePlate,
+                        driverName = vehicle.driverName,
+                        status = currentStatus,
+                        latitude = vehicle.currentLat,
+                        longitude = vehicle.currentLng,
+                        speedKmh = vehicle.speedKmh,
+                        fuelPercent = vehicle.fuelPercent,
+                        batteryVoltage = vehicle.batteryVoltage
+                    )
+                }
+            }
+        }
+
+        startActiveTripSyncLoop()
+    }
+
+    private fun startActiveTripSyncLoop() {
+        activeTripSyncJob?.cancel()
+        activeTripSyncJob = viewModelScope.launch {
+            while (_isTripActive.value) {
+                kotlinx.coroutines.delay(4000L) // Auto sync every 4 seconds
+                if (!_isTripActive.value) break
+                if (_isTripPaused.value) continue
+
+                val vehicle = activeVehicle.value ?: continue
+                val currentStatus = if (_isSimulating.value) {
+                    "MOVING (จำลองการวิ่ง)"
+                } else if (vehicle.speedKmh > 3) {
+                    "MOVING (กำลังวิ่ง GPS สด)"
+                } else {
+                    "MOVING (เริ่มเดินทาง/จอดรอ GPS สด)"
+                }
+
+                if (_isSupabaseSyncEnabled.value) {
+                    val sbResult = com.example.util.SupabaseSyncManager.sendTelemetryToSupabase(
+                        baseUrl = _supabaseUrl.value,
+                        anonKey = _supabaseAnonKey.value,
+                        vehicleId = vehicle.id,
+                        vehicleName = vehicle.name,
+                        licensePlate = vehicle.licensePlate,
+                        driverName = vehicle.driverName,
+                        officeName = vehicle.officeName,
+                        postalCode = vehicle.postalCode,
+                        provinceGroup = vehicle.provinceGroup,
+                        status = currentStatus,
+                        latitude = vehicle.currentLat,
+                        longitude = vehicle.currentLng,
+                        speedKmh = vehicle.speedKmh,
+                        fuelPercent = vehicle.fuelPercent,
+                        batteryVoltage = vehicle.batteryVoltage
+                    )
+                    val timeStr = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+                    _lastSyncStatus.value = sbResult.getOrElse { "ส่งข้อมูล Supabase สดสำเร็จ ($timeStr)" }
                 }
 
                 if (_isGoogleSheetsSyncEnabled.value) {
@@ -513,6 +580,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
         _isTripPaused.value = false
         _isSimulating.value = false
         simulationJob?.cancel()
+        activeTripSyncJob?.cancel()
 
         try {
             com.example.service.TrackingForegroundService.stopService(getApplication())
@@ -530,6 +598,25 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                     heading = vehicle.headingBearing
                 )
                 _lastSyncStatus.value = "ถึงที่หมายแล้ว (สรุปการเดินทางเรียบร้อย)"
+                if (_isSupabaseSyncEnabled.value) {
+                    com.example.util.SupabaseSyncManager.sendTelemetryToSupabase(
+                        baseUrl = _supabaseUrl.value,
+                        anonKey = _supabaseAnonKey.value,
+                        vehicleId = vehicle.id,
+                        vehicleName = vehicle.name,
+                        licensePlate = vehicle.licensePlate,
+                        driverName = vehicle.driverName,
+                        officeName = vehicle.officeName,
+                        postalCode = vehicle.postalCode,
+                        provinceGroup = vehicle.provinceGroup,
+                        status = "COMPLETED (สิ้นสุดการเดินทาง)",
+                        latitude = vehicle.currentLat,
+                        longitude = vehicle.currentLng,
+                        speedKmh = 0,
+                        fuelPercent = vehicle.fuelPercent,
+                        batteryVoltage = vehicle.batteryVoltage
+                    )
+                }
                 com.example.util.GoogleSheetsSyncManager.sendTelemetryToGoogleSheets(
                     webhookUrl = _googleSheetsUrl.value,
                     vehicleId = vehicle.id,
@@ -601,33 +688,44 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
         modelYear: String,
         driverName: String = "",
         officeName: String = "",
-        provinceGroup: String = "ขอนแก่น"
+        postalCode: String = "",
+        provinceGroup: String = "ขอนแก่น (ขก)"
     ) {
         viewModelScope.launch {
-            val newId = "V${System.currentTimeMillis() % 10000}"
+            val newId = "V_${System.currentTimeMillis() % 100000}"
+            val finalOffice = officeName.ifBlank { "ปณ.เมืองขอนแก่น" }
+            val finalPostal = if (postalCode.isNotBlank()) postalCode else {
+                if (finalOffice.contains("ศป.") || finalOffice.contains("ศูนย์ไปรษณีย์") || licensePlate.contains("70-1122")) "40010"
+                else if (finalOffice.contains("น้ำพอง")) "40310"
+                else if (finalOffice.contains("อุดรธานี")) "41000"
+                else if (finalOffice.contains("นครราชสีมา")) "30000"
+                else if (finalOffice.contains("อุบลราชธานี")) "34000"
+                else "40000"
+            }
             val vehicle = VehicleEntity(
                 id = newId,
                 name = name,
                 licensePlate = licensePlate,
                 modelYear = modelYear.ifEmpty { "2024" },
-                status = "MOVING",
-                currentLat = 13.7381,
-                currentLng = 100.6283,
-                speedKmh = 60,
-                headingBearing = 90f,
-                fuelPercent = 95,
+                status = "STOPPED",
+                currentLat = 16.4322,
+                currentLng = 102.8236,
+                speedKmh = 0,
+                headingBearing = 0f,
+                fuelPercent = 100,
                 batteryVoltage = 12.8,
                 activeRouteId = "R001",
                 isEngineLocked = false,
                 driverName = driverName.ifBlank { "สมชาย ใจดี (คนขับ)" },
-                officeName = officeName.ifBlank { "ปณ.เมืองขอนแก่น" },
-                provinceGroup = provinceGroup.ifBlank { "ขอนแก่น" }
+                officeName = finalOffice,
+                postalCode = finalPostal,
+                provinceGroup = provinceGroup.ifBlank { "ขอนแก่น (ขก)" }
             )
             repository.addVehicle(vehicle)
             selectVehicle(newId)
-            
+
             if (_isSupabaseSyncEnabled.value) {
-                com.example.util.SupabaseSyncManager.sendTelemetryToSupabase(
+                val res = com.example.util.SupabaseSyncManager.sendTelemetryToSupabase(
                     baseUrl = _supabaseUrl.value,
                     anonKey = _supabaseAnonKey.value,
                     vehicleId = vehicle.id,
@@ -635,14 +733,16 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                     licensePlate = vehicle.licensePlate,
                     driverName = vehicle.driverName,
                     officeName = vehicle.officeName,
+                    postalCode = vehicle.postalCode,
                     provinceGroup = vehicle.provinceGroup,
-                    status = "NEW (เพิ่มยานพาหนะใหม่)",
+                    status = "STOPPED",
                     latitude = vehicle.currentLat,
                     longitude = vehicle.currentLng,
                     speedKmh = vehicle.speedKmh,
                     fuelPercent = vehicle.fuelPercent,
                     batteryVoltage = vehicle.batteryVoltage
                 )
+                _lastSyncStatus.value = res.getOrElse { "บันทึกในเครื่องสำเร็จ (Supabase: ${it.message})" }
             }
         }
     }
@@ -663,17 +763,30 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
         modelYear: String,
         driverName: String,
         officeName: String = "",
+        postalCode: String = "",
         provinceGroup: String = ""
     ) {
         viewModelScope.launch {
             val vehicles = allVehicles.value
             val v = vehicles.firstOrNull { it.id == vehicleId } ?: return@launch
+            val finalOffice = officeName.ifBlank { v.officeName }
+            val finalPlate = licensePlate.ifBlank { v.licensePlate }
+            val finalPostal = if (postalCode.isNotBlank()) postalCode else {
+                if (v.postalCode.isNotBlank()) v.postalCode
+                else if (finalOffice.contains("ศป.") || finalOffice.contains("ศูนย์ไปรษณีย์") || finalPlate.contains("70-1122")) "40010"
+                else if (finalOffice.contains("น้ำพอง")) "40310"
+                else if (finalOffice.contains("อุดรธานี")) "41000"
+                else if (finalOffice.contains("นครราชสีมา")) "30000"
+                else if (finalOffice.contains("อุบลราชธานี")) "34000"
+                else "40000"
+            }
             val updated = v.copy(
                 name = name.ifBlank { v.name },
-                licensePlate = licensePlate.ifBlank { v.licensePlate },
+                licensePlate = finalPlate,
                 modelYear = modelYear.ifBlank { v.modelYear },
                 driverName = driverName.ifBlank { v.driverName },
-                officeName = officeName.ifBlank { v.officeName },
+                officeName = finalOffice,
+                postalCode = finalPostal,
                 provinceGroup = provinceGroup.ifBlank { v.provinceGroup }
             )
             repository.updateVehicle(updated)
@@ -686,6 +799,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                     licensePlate = updated.licensePlate,
                     driverName = updated.driverName,
                     officeName = updated.officeName,
+                    postalCode = updated.postalCode,
                     provinceGroup = updated.provinceGroup,
                     status = "UPDATED (แก้ไขข้อมูลรถ)",
                     latitude = updated.currentLat,
@@ -747,35 +861,73 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                         }
                     }
                     if (vId.isNotBlank()) {
-                        val name = jsonObj.optString("vehicle_name").ifBlank {
-                            jsonObj.optString("vehicleName").ifBlank {
-                                jsonObj.optString("ชื่อรถ").ifBlank { jsonObj.optString("name", "Vehicle") }
-                            }
-                        }
-                        val plate = jsonObj.optString("license_plate").ifBlank {
-                            jsonObj.optString("licensePlate").ifBlank {
-                                jsonObj.optString("ทะเบียนรถ").ifBlank { jsonObj.optString("plate", "-") }
-                            }
-                        }
-                        val driver = jsonObj.optString("driver_name").ifBlank {
-                            jsonObj.optString("driverName").ifBlank {
-                                jsonObj.optString("ชื่อผู้ใช้/พนักงานขับรถ").ifBlank {
-                                    jsonObj.optString("พนักงานขับรถ").ifBlank { jsonObj.optString("driver", "Driver") }
+                        val name = jsonObj.optString("name").ifBlank {
+                            jsonObj.optString("vehicle_name").ifBlank {
+                                jsonObj.optString("vehicleName").ifBlank {
+                                    jsonObj.optString("ชื่อรถ", "Vehicle $vId")
                                 }
                             }
                         }
-                        val office = jsonObj.optString("office_name").ifBlank {
-                            jsonObj.optString("officeName").ifBlank { jsonObj.optString("สำนักงาน", "ปณ.เมืองขอนแก่น") }
+                        val plate = jsonObj.optString("licenseplate").ifBlank {
+                            jsonObj.optString("license_plate").ifBlank {
+                                jsonObj.optString("licensePlate").ifBlank {
+                                    jsonObj.optString("ทะเบียนรถ", "-")
+                                }
+                            }
                         }
-                        val provinceGrp = jsonObj.optString("province_group").ifBlank {
-                            jsonObj.optString("provinceGroup").ifBlank { jsonObj.optString("กลุ่มจังหวัด", "ขอนแก่น") }
+                        val modelYr = jsonObj.optString("modelyear").ifBlank {
+                            jsonObj.optString("model_year", "2024")
+                        }
+                        val rawDriver = jsonObj.optString("driver_name").ifBlank {
+                            jsonObj.optString("driverName").ifBlank {
+                                jsonObj.optString("drivername", "")
+                            }
+                        }
+                        val rawOffice = jsonObj.optString("office_name").ifBlank {
+                            jsonObj.optString("officeName").ifBlank {
+                                jsonObj.optString("officename", "")
+                            }
+                        }
+                        val rawPostal = jsonObj.optString("postal_code").ifBlank {
+                            jsonObj.optString("postalcode").ifBlank {
+                                jsonObj.optString("zip_code").ifBlank {
+                                    jsonObj.optString("zipcode").ifBlank {
+                                        jsonObj.optString("รหัสไปรษณีย์", "")
+                                    }
+                                }
+                            }
+                        }
+                        val rawProvince = jsonObj.optString("province_group").ifBlank {
+                            jsonObj.optString("provinceGroup", "")
                         }
                         val rawStatus = jsonObj.optString("status").ifBlank {
                             jsonObj.optString("สถานะ", "STOPPED")
                         }
-                        val lat = jsonObj.optDouble("latitude", jsonObj.optDouble("current_lat", jsonObj.optDouble("ละติจูด", jsonObj.optDouble("lat", 13.7563))))
-                        val lng = jsonObj.optDouble("longitude", jsonObj.optDouble("current_lng", jsonObj.optDouble("ลองจิจูด", jsonObj.optDouble("lng", 100.5018))))
-                        val speed = jsonObj.optInt("speed_kmh", jsonObj.optInt("speedKmh", jsonObj.optInt("ความเร็ว", jsonObj.optInt("speed", 0))))
+
+                        val lat = jsonObj.optDouble("currentlat", jsonObj.optDouble("latitude", jsonObj.optDouble("current_lat", jsonObj.optDouble("lat", 0.0))))
+                        val lng = jsonObj.optDouble("currentlng", jsonObj.optDouble("longitude", jsonObj.optDouble("current_lng", jsonObj.optDouble("lng", 0.0))))
+                        val speed = jsonObj.optInt("speed_kmh", jsonObj.optInt("speedKmh", jsonObj.optInt("speed", 0)))
+
+                        val existing = allVehicles.value.firstOrNull { it.id == vId }
+
+                        val driver = if (rawDriver.isNotBlank()) rawDriver else (existing?.driverName ?: "พนักงานขับรถ")
+                        val office = if (rawOffice.isNotBlank()) rawOffice else {
+                            if (existing != null) existing.officeName
+                            else if (name.contains("ศูนย์ไปรษณีย์ขอนแก่น")) "ศูนย์ไปรษณีย์ขอนแก่น"
+                            else if (name.contains("น้ำพอง")) "ปณ.น้ำพอง"
+                            else if (name.contains("อุดรธานี")) "ปณ.เมืองอุดรธานี"
+                            else "ปณ.เมืองขอนแก่น"
+                        }
+                        val postal = if (rawPostal.isNotBlank()) rawPostal else {
+                            if (existing != null && existing.postalCode.isNotBlank()) existing.postalCode
+                            else if (office.contains("ศป.") || office.contains("ศูนย์ไปรษณีย์") || plate.contains("70-1122")) "40010"
+                            else if (office.contains("น้ำพอง")) "40310"
+                            else if (office.contains("อุดรธานี")) "41000"
+                            else if (office.contains("นครราชสีมา")) "30000"
+                            else if (office.contains("อุบลราชธานี")) "34000"
+                            else "40000"
+                        }
+                        val provinceGrp = if (rawProvince.isNotBlank()) rawProvince else (existing?.provinceGroup ?: "ขอนแก่น (ขก)")
 
                         val updateStr = jsonObj.optString("updated_at").ifBlank {
                             jsonObj.optString("created_at").ifBlank { jsonObj.optString("timestamp") }
@@ -798,19 +950,18 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                                 } catch (e: Exception) {}
                             }
                         }
-                        val isOffline = (System.currentTimeMillis() - lastUpdateMs) > 5 * 60 * 1000L
-                        val finalStatus = if (isOffline) "OFFLINE" else rawStatus
 
-                        val existing = allVehicles.value.firstOrNull { it.id == vId }
                         if (existing != null) {
                             repository.updateVehicle(
                                 existing.copy(
                                     name = name,
                                     licensePlate = plate,
+                                    modelYear = modelYr,
                                     driverName = driver,
                                     officeName = office,
+                                    postalCode = postal,
                                     provinceGroup = provinceGrp,
-                                    status = finalStatus,
+                                    status = rawStatus,
                                     currentLat = if (lat != 0.0) lat else existing.currentLat,
                                     currentLng = if (lng != 0.0) lng else existing.currentLng,
                                     speedKmh = speed,
@@ -823,17 +974,19 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                                     id = vId,
                                     name = name,
                                     licensePlate = plate,
-                                    modelYear = "2024",
-                                    status = finalStatus,
-                                    currentLat = if (lat != 0.0) lat else 13.7563,
-                                    currentLng = if (lng != 0.0) lng else 100.5018,
+                                    modelYear = modelYr,
+                                    status = rawStatus,
+                                    currentLat = if (lat != 0.0) lat else 16.4322,
+                                    currentLng = if (lng != 0.0) lng else 102.8236,
                                     speedKmh = speed,
                                     headingBearing = 0f,
                                     fuelPercent = 100,
                                     batteryVoltage = 12.6,
                                     activeRouteId = null,
+                                    isEngineLocked = false,
                                     driverName = driver,
                                     officeName = office,
+                                    postalCode = postal,
                                     provinceGroup = provinceGrp,
                                     lastUpdateMillis = lastUpdateMs
                                 )
@@ -902,6 +1055,9 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                 vehicleName = vehicle.name,
                 licensePlate = vehicle.licensePlate,
                 driverName = vehicle.driverName,
+                officeName = vehicle.officeName,
+                postalCode = vehicle.postalCode,
+                provinceGroup = vehicle.provinceGroup,
                 status = vehicle.status,
                 latitude = vehicle.currentLat,
                 longitude = vehicle.currentLng,
@@ -930,6 +1086,9 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                 vehicleName = vehicle.name,
                 licensePlate = vehicle.licensePlate,
                 driverName = vehicle.driverName,
+                officeName = vehicle.officeName,
+                postalCode = vehicle.postalCode,
+                provinceGroup = vehicle.provinceGroup,
                 status = vehicle.status,
                 latitude = vehicle.currentLat,
                 longitude = vehicle.currentLng,
@@ -1011,6 +1170,9 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                                 vehicleName = currentVeh.name,
                                 licensePlate = currentVeh.licensePlate,
                                 driverName = currentVeh.driverName,
+                                officeName = currentVeh.officeName,
+                                postalCode = currentVeh.postalCode,
+                                provinceGroup = currentVeh.provinceGroup,
                                 status = currentVeh.status,
                                 latitude = targetPoint.lat,
                                 longitude = targetPoint.lng,
@@ -1040,6 +1202,22 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                     val userEntities = list.mapNotNull { jsonObj ->
                         val uId = jsonObj.optString("id")
                         if (uId.isNotBlank()) {
+                            val rawOffice = jsonObj.optString("office_name", "ปณ.เมืองขอนแก่น")
+                            val rawPostal = jsonObj.optString("postal_code").ifBlank {
+                                jsonObj.optString("postalcode").ifBlank {
+                                    jsonObj.optString("zip_code").ifBlank {
+                                        jsonObj.optString("zipcode", "")
+                                    }
+                                }
+                            }
+                            val postal = if (rawPostal.isNotBlank()) rawPostal else {
+                                if (rawOffice.contains("ศป.") || rawOffice.contains("ศูนย์ไปรษณีย์")) "40010"
+                                else if (rawOffice.contains("น้ำพอง")) "40310"
+                                else if (rawOffice.contains("อุดรธานี")) "41000"
+                                else if (rawOffice.contains("นครราชสีมา")) "30000"
+                                else if (rawOffice.contains("อุบลราชธานี")) "34000"
+                                else "40000"
+                            }
                             com.example.data.UserEntity(
                                 id = uId,
                                 name = jsonObj.optString("name", "ผู้ใช้งาน"),
@@ -1048,7 +1226,8 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                                 email = jsonObj.optString("email", ""),
                                 phone = jsonObj.optString("phone", ""),
                                 password = jsonObj.optString("password", "123456"),
-                                officeName = jsonObj.optString("office_name", "ปณ.เมืองขอนแก่น"),
+                                officeName = rawOffice,
+                                postalCode = postal,
                                 provinceGroup = jsonObj.optString("province_group", "ขอนแก่น (ขก)"),
                                 assignedVehicleId = jsonObj.optString("assigned_vehicle_id", ""),
                                 status = jsonObj.optString("status", "ACTIVE")
@@ -1078,11 +1257,20 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
         phone: String = "",
         password: String = "123456",
         officeName: String = "ปณ.เมืองขอนแก่น",
+        postalCode: String = "",
         provinceGroup: String = "ขอนแก่น (ขก)",
         assignedVehicleId: String = "",
         onComplete: (Boolean, String) -> Unit = { _, _ -> }
     ) {
         viewModelScope.launch {
+            val finalPostal = if (postalCode.isNotBlank()) postalCode else {
+                if (officeName.contains("ศป.") || officeName.contains("ศูนย์ไปรษณีย์")) "40010"
+                else if (officeName.contains("น้ำพอง")) "40310"
+                else if (officeName.contains("อุดรธานี")) "41000"
+                else if (officeName.contains("นครราชสีมา")) "30000"
+                else if (officeName.contains("อุบลราชธานี")) "34000"
+                else "40000"
+            }
             val newUser = com.example.data.UserEntity(
                 id = id,
                 name = name,
@@ -1091,6 +1279,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                 phone = phone,
                 password = password,
                 officeName = officeName,
+                postalCode = finalPostal,
                 provinceGroup = provinceGroup,
                 assignedVehicleId = assignedVehicleId,
                 status = "ACTIVE"
@@ -1106,6 +1295,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                 phone = newUser.phone,
                 password = newUser.password,
                 officeName = newUser.officeName,
+                postalCode = newUser.postalCode,
                 provinceGroup = newUser.provinceGroup,
                 assignedVehicleId = newUser.assignedVehicleId,
                 status = newUser.status
@@ -1134,6 +1324,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                 phone = user.phone,
                 password = user.password,
                 officeName = user.officeName,
+                postalCode = user.postalCode,
                 provinceGroup = user.provinceGroup,
                 assignedVehicleId = user.assignedVehicleId,
                 status = user.status

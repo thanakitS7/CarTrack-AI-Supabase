@@ -41,98 +41,158 @@ object SupabaseSyncManager {
         batteryVoltage: Double,
         driverName: String = "",
         officeName: String = "",
+        postalCode: String = "",
         provinceGroup: String = ""
     ): Result<String> = withContext(Dispatchers.IO) {
         val cleanedUrl = baseUrl.trim().removeSuffix("/").removeSuffix("/rest/v1")
         val timeStr = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).format(Date())
 
+        val resolvedPostal = if (postalCode.isNotBlank()) postalCode else {
+            if (officeName.contains("ศป.") || officeName.contains("ศูนย์ไปรษณีย์") || licensePlate.contains("70-1122")) "40010"
+            else if (officeName.contains("น้ำพอง")) "40310"
+            else if (officeName.contains("อุดรธานี")) "41000"
+            else if (officeName.contains("นครราชสีมา")) "30000"
+            else if (officeName.contains("อุบลราชธานี")) "34000"
+            else "40000"
+        }
+
+        val cleanStatus = when {
+            status.uppercase().contains("COMPLETED") || status.contains("สิ้นสุด") -> "COMPLETED"
+            status.uppercase().contains("PAUSED") || status.contains("หยุดพัก") -> "PAUSED"
+            status.uppercase().contains("MOVING") || status.contains("กำลังวิ่ง") || status.contains("เริ่มเดินทาง") -> "MOVING"
+            status.uppercase().contains("IDLE") || status.contains("จอด") -> "IDLE"
+            status.length > 15 -> status.take(15)
+            else -> status
+        }
+
         try {
-            val jsonPayload = JSONObject().apply {
-                put("vehicle_id", vehicleId)
-                put("vehicle_name", vehicleName)
+            val payloadObj = JSONObject().apply {
+                // Exact columns matching Supabase schema (from Table Editor)
+                put("id", vehicleId)
+                put("name", vehicleName)
+                put("licenseplate", licensePlate)
+                put("modelyear", "2024")
+                put("status", cleanStatus)
+                put("currentlat", latitude)
+                put("currentlng", longitude)
+
+                // Additional potential columns in schema (will be dynamically stripped if not present)
                 put("license_plate", licensePlate)
                 put("driver_name", driverName)
                 put("office_name", officeName)
+                put("postal_code", resolvedPostal)
+                put("postalcode", resolvedPostal)
+                put("zip_code", resolvedPostal)
+                put("zipcode", resolvedPostal)
+                put("รหัสไปรษณีย์", resolvedPostal)
                 put("province_group", provinceGroup)
-                put("status", status)
                 put("speed_kmh", speedKmh)
-                put("latitude", latitude)
-                put("longitude", longitude)
                 put("fuel_percent", fuelPercent)
                 put("battery_voltage", batteryVoltage)
+                put("vehicle_name", vehicleName)
+                put("latitude", latitude)
+                put("longitude", longitude)
                 put("updated_at", timeStr)
-            }.toString()
+            }
 
             val mediaType = "application/json; charset=utf-8".toMediaType()
-            val body = jsonPayload.toRequestBody(mediaType)
-
-            // Try 1: UPSERT (POST with merge-duplicates)
-            val requestUpsert = Request.Builder()
-                .url("$cleanedUrl/rest/v1/vehicles")
-                .addHeader("apikey", anonKey)
-                .addHeader("Authorization", "Bearer $anonKey")
-                .addHeader("Content-Type", "application/json")
-                .addHeader("Prefer", "resolution=merge-duplicates,return=representation")
-                .post(body)
-                .build()
+            val columnErrorRegex = "Could not find the '([^']+)' column".toRegex()
 
             var isSuccess = false
             var lastResponseBody = ""
             var lastCode = 0
+            var activeTruncateLen = 20
 
-            client.newCall(requestUpsert).execute().use { response ->
-                lastCode = response.code
-                lastResponseBody = response.body?.string() ?: ""
-                if (response.isSuccessful) {
-                    isSuccess = true
-                }
-            }
+            for (attempt in 0..15) {
+                val body = payloadObj.toString().toRequestBody(mediaType)
 
-            // Try 2: If Upsert failed (e.g. no primary key constraint), try PATCH update
-            if (!isSuccess) {
-                val patchUrl = "$cleanedUrl/rest/v1/vehicles?vehicle_id=eq.$vehicleId"
-                val requestPatch = Request.Builder()
-                    .url(patchUrl)
-                    .addHeader("apikey", anonKey)
-                    .addHeader("Authorization", "Bearer $anonKey")
-                    .addHeader("Content-Type", "application/json")
-                    .addHeader("Prefer", "return=representation")
-                    .patch(body)
-                    .build()
-
-                client.newCall(requestPatch).execute().use { response ->
-                    lastCode = response.code
-                    val patchBody = response.body?.string() ?: ""
-                    if (response.isSuccessful && patchBody != "[]" && patchBody.isNotEmpty()) {
-                        isSuccess = true
-                        lastResponseBody = patchBody
-                    }
-                }
-            }
-
-            // Try 3: If PATCH didn't update anything, try standard INSERT (POST without resolution header)
-            if (!isSuccess) {
-                val requestInsert = Request.Builder()
+                // Try 1: UPSERT (POST with merge-duplicates)
+                val requestUpsert = Request.Builder()
                     .url("$cleanedUrl/rest/v1/vehicles")
                     .addHeader("apikey", anonKey)
                     .addHeader("Authorization", "Bearer $anonKey")
                     .addHeader("Content-Type", "application/json")
-                    .addHeader("Prefer", "return=representation")
+                    .addHeader("Prefer", "resolution=merge-duplicates,return=representation")
                     .post(body)
                     .build()
 
-                client.newCall(requestInsert).execute().use { response ->
+                client.newCall(requestUpsert).execute().use { response ->
                     lastCode = response.code
                     lastResponseBody = response.body?.string() ?: ""
                     if (response.isSuccessful) {
                         isSuccess = true
                     }
                 }
+
+                // Try 2: If Upsert failed and not missing column or varchar length error, try PATCH update
+                if (!isSuccess && !lastResponseBody.contains("PGRST204") && !lastResponseBody.contains("22001")) {
+                    val patchUrl = "$cleanedUrl/rest/v1/vehicles?id=eq.$vehicleId"
+                    val requestPatch = Request.Builder()
+                        .url(patchUrl)
+                        .addHeader("apikey", anonKey)
+                        .addHeader("Authorization", "Bearer $anonKey")
+                        .addHeader("Content-Type", "application/json")
+                        .addHeader("Prefer", "return=representation")
+                        .patch(body)
+                        .build()
+
+                    client.newCall(requestPatch).execute().use { response ->
+                        lastCode = response.code
+                        val patchBody = response.body?.string() ?: ""
+                        if (response.isSuccessful && patchBody != "[]" && patchBody.isNotEmpty()) {
+                            isSuccess = true
+                            lastResponseBody = patchBody
+                        }
+                    }
+                }
+
+                // Try 3: If PATCH didn't update and not missing column or varchar length error, try standard INSERT
+                if (!isSuccess && !lastResponseBody.contains("PGRST204") && !lastResponseBody.contains("22001")) {
+                    val requestInsert = Request.Builder()
+                        .url("$cleanedUrl/rest/v1/vehicles")
+                        .addHeader("apikey", anonKey)
+                        .addHeader("Authorization", "Bearer $anonKey")
+                        .addHeader("Content-Type", "application/json")
+                        .addHeader("Prefer", "return=representation")
+                        .post(body)
+                        .build()
+
+                    client.newCall(requestInsert).execute().use { response ->
+                        lastCode = response.code
+                        lastResponseBody = response.body?.string() ?: ""
+                        if (response.isSuccessful) {
+                            isSuccess = true
+                        }
+                    }
+                }
+
+                if (isSuccess) break
+
+                // Check if error is PGRST204 (Missing Column in Supabase schema)
+                val match = columnErrorRegex.find(lastResponseBody)
+                if (match != null) {
+                    val missingColumn = match.groupValues[1]
+                    Log.w("SupabaseSync", "Removing unsupported column '$missingColumn' from vehicles payload and retrying...")
+                    payloadObj.remove(missingColumn)
+                } else if (lastResponseBody.contains("22001") || lastResponseBody.contains("value too long")) {
+                    val limitMatch = "varying\\((\\d+)\\)".toRegex().find(lastResponseBody)
+                    val detectedLimit = limitMatch?.groupValues?.get(1)?.toIntOrNull()
+                    activeTruncateLen = if (detectedLimit != null) {
+                        (detectedLimit - 1).coerceAtLeast(3)
+                    } else {
+                        (activeTruncateLen - 5).coerceAtLeast(3)
+                    }
+                    Log.w("SupabaseSync", "String value too long in Supabase. Truncating fields to $activeTruncateLen chars and retrying...")
+                    truncateStringFields(payloadObj, activeTruncateLen)
+                } else {
+                    break
+                }
             }
 
             if (isSuccess) {
                 Log.d("SupabaseSync", "Successfully synced to Supabase: $lastResponseBody")
-                logTelemetryHistory(cleanedUrl, anonKey, vehicleId, latitude, longitude, speedKmh, status, timeStr)
+                logTelemetryHistory(cleanedUrl, anonKey, vehicleId, licensePlate, driverName, officeName, resolvedPostal, provinceGroup, latitude, longitude, speedKmh, status, timeStr)
+                logVehicleUsage(cleanedUrl, anonKey, vehicleId, licensePlate, driverName, officeName, resolvedPostal, provinceGroup, status, timeStr)
                 Result.success("ส่งข้อมูลไปยัง Supabase สำเร็จ ($timeStr)")
             } else {
                 Log.e("SupabaseSync", "Failed Supabase request ($lastCode): $lastResponseBody")
@@ -148,34 +208,203 @@ object SupabaseSyncManager {
         baseUrl: String,
         anonKey: String,
         vehicleId: String,
+        licensePlate: String,
+        driverName: String,
+        officeName: String,
+        postalCode: String,
+        provinceGroup: String,
         lat: Double,
         lng: Double,
         speed: Int,
         status: String,
         timestamp: String
     ) {
+        val cleanedUrl = baseUrl.trim().removeSuffix("/").removeSuffix("/rest/v1")
+        val cleanStatus = when {
+            status.uppercase().contains("COMPLETED") || status.contains("สิ้นสุด") -> "COMPLETED"
+            status.uppercase().contains("PAUSED") || status.contains("หยุดพัก") -> "PAUSED"
+            status.uppercase().contains("MOVING") || status.contains("กำลังวิ่ง") || status.contains("เริ่มเดินทาง") -> "MOVING"
+            status.uppercase().contains("IDLE") || status.contains("จอด") -> "IDLE"
+            status.length > 15 -> status.take(15)
+            else -> status
+        }
+
         try {
-            val jsonPayload = JSONObject().apply {
+            val locId = "L${System.currentTimeMillis()}"
+            val nowMs = System.currentTimeMillis()
+
+            val payloadObj = JSONObject().apply {
+                put("id", locId)
                 put("vehicle_id", vehicleId)
+                put("license_plate", licensePlate)
+                put("driver_name", driverName)
+                put("office_name", officeName)
+                put("postal_code", postalCode)
+                put("province_group", provinceGroup)
                 put("latitude", lat)
                 put("longitude", lng)
                 put("speed_kmh", speed)
-                put("status", status)
+                put("heading_bearing", 0.0)
+                put("timestamp", nowMs)
                 put("created_at", timestamp)
-            }.toString()
+                put("status", cleanStatus)
+            }
 
             val mediaType = "application/json; charset=utf-8".toMediaType()
-            val request = Request.Builder()
-                .url("$baseUrl/rest/v1/telemetry_history")
-                .addHeader("apikey", anonKey)
-                .addHeader("Authorization", "Bearer $anonKey")
-                .addHeader("Content-Type", "application/json")
-                .post(jsonPayload.toRequestBody(mediaType))
-                .build()
+            val columnErrorRegex = "Could not find the '([^']+)' column".toRegex()
 
-            client.newCall(request).execute().close()
+            val tablesToTry = listOf("location_history", "telemetry_history")
+
+            for (table in tablesToTry) {
+                val currentObj = JSONObject(payloadObj.toString())
+                var activeTruncateLen = 20
+                for (attempt in 0..6) {
+                    val body = currentObj.toString().toRequestBody(mediaType)
+                    val request = Request.Builder()
+                        .url("$cleanedUrl/rest/v1/$table")
+                        .addHeader("apikey", anonKey)
+                        .addHeader("Authorization", "Bearer $anonKey")
+                        .addHeader("Content-Type", "application/json")
+                        .post(body)
+                        .build()
+
+                    client.newCall(request).execute().use { resp ->
+                        val respStr = resp.body?.string() ?: ""
+                        if (resp.isSuccessful) {
+                            Log.d("SupabaseSync", "บันทึกประวัติพิกัดลง $table สำเร็จ")
+                            return
+                        } else {
+                            val match = columnErrorRegex.find(respStr)
+                            if (match != null) {
+                                val missingCol = match.groupValues[1]
+                                currentObj.remove(missingCol)
+                            } else if (respStr.contains("22001") || respStr.contains("value too long")) {
+                                val limitMatch = "varying\\((\\d+)\\)".toRegex().find(respStr)
+                                val detectedLimit = limitMatch?.groupValues?.get(1)?.toIntOrNull()
+                                activeTruncateLen = if (detectedLimit != null) {
+                                    (detectedLimit - 1).coerceAtLeast(3)
+                                } else {
+                                    (activeTruncateLen - 5).coerceAtLeast(3)
+                                }
+                                Log.w("SupabaseSync", "Truncating string fields for table $table to $activeTruncateLen chars...")
+                                truncateStringFields(currentObj, activeTruncateLen)
+                            } else if (currentObj.has("id")) {
+                                // If UUID / ID constraint error, remove 'id' so Supabase auto-generates key
+                                currentObj.remove("id")
+                            } else if (currentObj.has("created_at")) {
+                                currentObj.remove("created_at")
+                            } else {
+                                Log.w("SupabaseSync", "ไม่สามารถเพิ่มข้อมูลลง $table: HTTP ${resp.code} $respStr")
+                                break
+                            }
+                        }
+                    }
+                }
+            }
         } catch (e: Exception) {
-            Log.w("SupabaseSync", "Optional telemetry_history log omitted or table not present")
+            Log.w("SupabaseSync", "Error logging telemetry history: ${e.message}")
+        }
+    }
+
+    fun logVehicleUsage(
+        baseUrl: String,
+        anonKey: String,
+        vehicleId: String,
+        licensePlate: String,
+        driverName: String,
+        officeName: String = "",
+        postalCode: String = "",
+        provinceGroup: String = "",
+        status: String = "IN_PROGRESS",
+        timestamp: String = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).format(Date())
+    ) {
+        val cleanedUrl = baseUrl.trim().removeSuffix("/").removeSuffix("/rest/v1")
+        val cleanStatus = when {
+            status.uppercase().contains("COMPLETED") || status.contains("สิ้นสุด") -> "COMPLETED"
+            status.uppercase().contains("PAUSED") || status.contains("หยุดพัก") -> "PAUSED"
+            status.uppercase().contains("MOVING") || status.contains("กำลังวิ่ง") || status.contains("เริ่มเดินทาง") -> "MOVING"
+            status.uppercase().contains("IDLE") || status.contains("จอด") -> "IDLE"
+            status.length > 15 -> status.take(15)
+            else -> status
+        }
+
+        try {
+            val usageId = "U${System.currentTimeMillis()}"
+
+            val payloadObj = JSONObject().apply {
+                put("id", usageId)
+                put("vehicle_id", vehicleId)
+                put("license_plate", licensePlate)
+                put("driver_name", driverName)
+                put("office_name", officeName)
+                put("postal_code", postalCode)
+                put("province_group", provinceGroup)
+                put("start_time", timestamp)
+                put("status", cleanStatus)
+                put("created_at", timestamp)
+            }
+
+            val mediaType = "application/json; charset=utf-8".toMediaType()
+            val columnErrorRegex = "Could not find the '([^']+)' column".toRegex()
+
+            val currentObj = JSONObject(payloadObj.toString())
+            var activeTruncateLen = 20
+            for (attempt in 0..6) {
+                val body = currentObj.toString().toRequestBody(mediaType)
+                val request = Request.Builder()
+                    .url("$cleanedUrl/rest/v1/vehicle_usage_logs")
+                    .addHeader("apikey", anonKey)
+                    .addHeader("Authorization", "Bearer $anonKey")
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Prefer", "resolution=merge-duplicates,return=representation")
+                    .post(body)
+                    .build()
+
+                client.newCall(request).execute().use { resp ->
+                    val respStr = resp.body?.string() ?: ""
+                    if (resp.isSuccessful) {
+                        Log.d("SupabaseSync", "บันทึกประวัติการใช้งานรถลง vehicle_usage_logs สำเร็จ")
+                        return
+                    } else {
+                        val match = columnErrorRegex.find(respStr)
+                        if (match != null) {
+                            val missingCol = match.groupValues[1]
+                            currentObj.remove(missingCol)
+                        } else if (respStr.contains("22001") || respStr.contains("value too long")) {
+                            val limitMatch = "varying\\((\\d+)\\)".toRegex().find(respStr)
+                            val detectedLimit = limitMatch?.groupValues?.get(1)?.toIntOrNull()
+                            activeTruncateLen = if (detectedLimit != null) {
+                                (detectedLimit - 1).coerceAtLeast(3)
+                            } else {
+                                (activeTruncateLen - 5).coerceAtLeast(3)
+                            }
+                            Log.w("SupabaseSync", "Truncating string fields for vehicle_usage_logs to $activeTruncateLen chars...")
+                            truncateStringFields(currentObj, activeTruncateLen)
+                        } else if (currentObj.has("id")) {
+                            currentObj.remove("id")
+                        } else {
+                            Log.w("SupabaseSync", "ไม่สามารถเพิ่มข้อมูลลง vehicle_usage_logs: HTTP ${resp.code} $respStr")
+                            break
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("SupabaseSync", "Error logging vehicle usage: ${e.message}")
+        }
+    }
+
+    private fun truncateStringFields(jsonObj: JSONObject, maxLength: Int = 20) {
+        val keys = jsonObj.keys()
+        val keysList = mutableListOf<String>()
+        while (keys.hasNext()) {
+            keysList.add(keys.next())
+        }
+        for (k in keysList) {
+            val value = jsonObj.opt(k)
+            if (value is String && value.length > maxLength) {
+                jsonObj.put(k, value.take(maxLength))
+            }
         }
     }
 
@@ -294,6 +523,7 @@ object SupabaseSyncManager {
         phone: String = "",
         password: String = "123456",
         officeName: String = "ปณ.เมืองขอนแก่น",
+        postalCode: String = "40000",
         provinceGroup: String = "ขอนแก่น (ขก)",
         assignedVehicleId: String = "",
         status: String = "ACTIVE"
@@ -301,7 +531,7 @@ object SupabaseSyncManager {
         val cleanedUrl = baseUrl.trim().removeSuffix("/").removeSuffix("/rest/v1")
 
         try {
-            val payload = JSONObject().apply {
+            val payloadObj = JSONObject().apply {
                 put("id", userId)
                 put("name", name)
                 put("username", username)
@@ -310,29 +540,65 @@ object SupabaseSyncManager {
                 put("phone", phone)
                 put("password", password)
                 put("office_name", officeName)
+                put("postal_code", postalCode)
                 put("province_group", provinceGroup)
                 put("assigned_vehicle_id", assignedVehicleId)
                 put("status", status)
                 put("updated_at", SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).format(Date()))
-            }.toString()
+            }
 
             val mediaType = "application/json; charset=utf-8".toMediaType()
-            val request = Request.Builder()
-                .url("$cleanedUrl/rest/v1/users")
-                .addHeader("apikey", anonKey)
-                .addHeader("Authorization", "Bearer $anonKey")
-                .addHeader("Content-Type", "application/json")
-                .addHeader("Prefer", "resolution=merge-duplicates,return=representation")
-                .post(payload.toRequestBody(mediaType))
-                .build()
+            val columnErrorRegex = "Could not find the '([^']+)' column".toRegex()
+            var isSuccess = false
+            var lastResponseBody = ""
+            var lastCode = 0
+            var activeTruncateLen = 20
 
-            client.newCall(request).execute().use { response ->
-                val body = response.body?.string() ?: ""
-                if (response.isSuccessful) {
-                    Result.success("อัปเดตผู้ใช้ใน Supabase สำเร็จ")
-                } else {
-                    Result.failure(Exception("HTTP ${response.code}: $body"))
+            for (attempt in 0..5) {
+                val body = payloadObj.toString().toRequestBody(mediaType)
+                val request = Request.Builder()
+                    .url("$cleanedUrl/rest/v1/users")
+                    .addHeader("apikey", anonKey)
+                    .addHeader("Authorization", "Bearer $anonKey")
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Prefer", "resolution=merge-duplicates,return=representation")
+                    .post(body)
+                    .build()
+
+                client.newCall(request).execute().use { response ->
+                    lastCode = response.code
+                    lastResponseBody = response.body?.string() ?: ""
+                    if (response.isSuccessful) {
+                        isSuccess = true
+                    }
                 }
+
+                if (isSuccess) break
+
+                val match = columnErrorRegex.find(lastResponseBody)
+                if (match != null) {
+                    val missingColumn = match.groupValues[1]
+                    Log.w("SupabaseSync", "Removing unsupported column '$missingColumn' from users payload and retrying...")
+                    payloadObj.remove(missingColumn)
+                } else if (lastResponseBody.contains("22001") || lastResponseBody.contains("value too long")) {
+                    val limitMatch = "varying\\((\\d+)\\)".toRegex().find(lastResponseBody)
+                    val detectedLimit = limitMatch?.groupValues?.get(1)?.toIntOrNull()
+                    activeTruncateLen = if (detectedLimit != null) {
+                        (detectedLimit - 1).coerceAtLeast(3)
+                    } else {
+                        (activeTruncateLen - 5).coerceAtLeast(3)
+                    }
+                    Log.w("SupabaseSync", "Truncating string fields for users payload to $activeTruncateLen chars...")
+                    truncateStringFields(payloadObj, activeTruncateLen)
+                } else {
+                    break
+                }
+            }
+
+            if (isSuccess) {
+                Result.success("อัปเดตผู้ใช้ใน Supabase สำเร็จ")
+            } else {
+                Result.failure(Exception("HTTP $lastCode: $lastResponseBody"))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -340,11 +606,11 @@ object SupabaseSyncManager {
     }
 
     const val SUPABASE_SQL_SETUP_SCRIPT = """-- ===================================================
--- 🐘 SUPABASE DATABASE CREATION SCRIPT FOR USERS & VEHICLES
--- คัดลอกคำสั่ง SQL นี้ไปวางใน Supabase SQL Editor แล้วกด Run ได้เลย
+-- 🐘 SUPABASE DATABASE SETUP SCRIPT FOR POSTAL TRACKING APP
+-- คัดลอกคำสั่ง SQL ทั้งหมดนี้ไปวางที่ Supabase > SQL Editor แล้วกด RUN
 -- ===================================================
 
--- 1. สร้างตาราง 'users' สำหรับเก็บข้อมูลผู้ใช้งาน, คนขับรถ และ ผู้จัดการ (MANAGER)
+-- 1. ตาราง 'users' (ผู้ใช้งาน, คนขับ, ผู้จัดการ)
 CREATE TABLE IF NOT EXISTS public.users (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -352,59 +618,102 @@ CREATE TABLE IF NOT EXISTS public.users (
     role TEXT DEFAULT 'DRIVER', -- 'DRIVER', 'MANAGER', 'ADMIN', 'DISPATCHER', 'STAFF'
     email TEXT DEFAULT '',
     phone TEXT DEFAULT '',
-    password TEXT DEFAULT '123456', -- รหัสผ่านเข้าใช้งาน
+    password TEXT DEFAULT '123456',
     office_name TEXT DEFAULT 'ปณ.เมืองขอนแก่น',
-    province_group TEXT DEFAULT 'ขอนแก่น (ขก)', -- ควบคุมเฉพาะกลุ่มจังหวัดของตัวเองสำหรับ role MANAGER
+    postal_code TEXT DEFAULT '40000',
+    province_group TEXT DEFAULT 'ขอนแก่น (ขก)',
     assigned_vehicle_id TEXT DEFAULT '',
     status TEXT DEFAULT 'ACTIVE',
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- เพิ่มคอลัมน์ password และ username ในกรณีที่มีตาราง users อยู่ก่อนแล้ว
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password TEXT DEFAULT '123456';
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS username TEXT DEFAULT '';
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS postal_code TEXT DEFAULT '40000';
 
--- ปลดล็อกสิทธิ์ (RLS Policy) ให้แอปอ่าน/เขียนตาราง users ได้
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow public read/write users" ON public.users;
 CREATE POLICY "Allow public read/write users" ON public.users FOR ALL USING (true) WITH CHECK (true);
 
--- 2. สร้างตาราง 'vehicles' สำหรับเก็บตำแหน่ง GPS และสถานะรถ
+-- 2. ตาราง 'vehicles' (ข้อมูลตำแหน่งรถ GPS และสถานะ)
 CREATE TABLE IF NOT EXISTS public.vehicles (
-    vehicle_id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY,
+    vehicle_id TEXT,
     vehicle_name TEXT,
     license_plate TEXT,
     driver_name TEXT,
-    office_name TEXT,
-    province_group TEXT,
-    status TEXT,
-    speed_kmh INT DEFAULT 0,
-    latitude DOUBLE PRECISION DEFAULT 13.7563,
-    longitude DOUBLE PRECISION DEFAULT 100.5018,
-    fuel_percent INT DEFAULT 100,
+    office_name TEXT DEFAULT 'ปณ.เมืองขอนแก่น',
+    postal_code TEXT DEFAULT '40000',
+    province_group TEXT DEFAULT 'ขอนแก่น (ขก)',
+    status TEXT DEFAULT 'STOPPED',
+    speed_kmh DOUBLE PRECISION DEFAULT 0.0,
+    latitude DOUBLE PRECISION DEFAULT 16.4322,
+    longitude DOUBLE PRECISION DEFAULT 102.8236,
+    fuel_percent DOUBLE PRECISION DEFAULT 100.0,
     battery_voltage DOUBLE PRECISION DEFAULT 12.6,
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ปลดล็อกสิทธิ์ (RLS Policy) ให้แอปอ่าน/เขียนตาราง vehicles ได้
+ALTER TABLE public.vehicles ADD COLUMN IF NOT EXISTS office_name TEXT DEFAULT 'ปณ.เมืองขอนแก่น';
+ALTER TABLE public.vehicles ADD COLUMN IF NOT EXISTS postal_code TEXT DEFAULT '40000';
+ALTER TABLE public.vehicles ADD COLUMN IF NOT EXISTS province_group TEXT DEFAULT 'ขอนแก่น (ขก)';
+
 ALTER TABLE public.vehicles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow public read/write vehicles" ON public.vehicles;
 CREATE POLICY "Allow public read/write vehicles" ON public.vehicles FOR ALL USING (true) WITH CHECK (true);
 
--- 3. สร้างตาราง 'telemetry_history' สำหรับเก็บบันทึกประวัติพิกัด GPS ย้อนหลัง
-CREATE TABLE IF NOT EXISTS public.telemetry_history (
-    id BIGSERIAL PRIMARY KEY,
+-- 3. ตาราง 'location_history' (เก็บบันทึกประวัติพิกัด GPS)
+CREATE TABLE IF NOT EXISTS public.location_history (
+    id TEXT PRIMARY KEY,
     vehicle_id TEXT,
     latitude DOUBLE PRECISION,
     longitude DOUBLE PRECISION,
-    speed_kmh INT,
+    speed_kmh DOUBLE PRECISION,
+    heading_bearing DOUBLE PRECISION DEFAULT 0.0,
     status TEXT,
+    timestamp BIGINT DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ปลดล็อกสิทธิ์ (RLS Policy) ให้แอปอ่าน/เขียนตาราง telemetry_history ได้
-ALTER TABLE public.telemetry_history ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow public read/write history" ON public.telemetry_history;
-CREATE POLICY "Allow public read/write history" ON public.telemetry_history FOR ALL USING (true) WITH CHECK (true);
+ALTER TABLE public.location_history ADD COLUMN IF NOT EXISTS heading_bearing DOUBLE PRECISION DEFAULT 0.0;
+ALTER TABLE public.location_history ADD COLUMN IF NOT EXISTS timestamp BIGINT DEFAULT 0;
+
+ALTER TABLE public.location_history ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public read/write location_history" ON public.location_history;
+CREATE POLICY "Allow public read/write location_history" ON public.location_history FOR ALL USING (true) WITH CHECK (true);
+
+-- 4. ตาราง 'vehicle_usage_logs' (บันทึกการเข้า/ออกงาน)
+CREATE TABLE IF NOT EXISTS public.vehicle_usage_logs (
+    id TEXT PRIMARY KEY,
+    vehicle_id TEXT,
+    license_plate TEXT,
+    driver_name TEXT,
+    office_name TEXT,
+    postal_code TEXT,
+    province_group TEXT,
+    start_time TIMESTAMPTZ DEFAULT NOW(),
+    end_time TIMESTAMPTZ,
+    status TEXT DEFAULT 'IN_PROGRESS',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.vehicle_usage_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public read/write vehicle_usage_logs" ON public.vehicle_usage_logs;
+CREATE POLICY "Allow public read/write vehicle_usage_logs" ON public.vehicle_usage_logs FOR ALL USING (true) WITH CHECK (true);
+
+-- 5. ตาราง 'alerts' (แจ้งเตือนความผิดปกติ)
+CREATE TABLE IF NOT EXISTS public.alerts (
+    id TEXT PRIMARY KEY,
+    vehicle_id TEXT,
+    license_plate TEXT,
+    alert_type TEXT,
+    message TEXT,
+    severity TEXT DEFAULT 'WARNING',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.alerts ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public read/write alerts" ON public.alerts;
+CREATE POLICY "Allow public read/write alerts" ON public.alerts FOR ALL USING (true) WITH CHECK (true);
 """
 }

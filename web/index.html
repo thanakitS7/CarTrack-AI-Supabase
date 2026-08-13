@@ -87,6 +87,12 @@
                 <i class="fa-solid fa-rotate"></i>
                 <span class="hidden md:inline">รีเฟรช</span>
             </button>
+
+            <!-- Clear Cache Button -->
+            <button onclick="clearSystemCache()" title="ล้างแคชและโหลดข้อมูลสดใหม่" class="bg-rose-700 hover:bg-rose-600 active:bg-rose-800 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition shadow-lg shadow-rose-700/20">
+                <i class="fa-solid fa-trash-can"></i>
+                <span class="hidden md:inline">ล้างแคช</span>
+            </button>
         </div>
     </header>
 
@@ -1088,6 +1094,113 @@
             return fallback;
         }
 
+        // --- Default Sample Vehicles Fallback ---
+        const DEFAULT_SAMPLE_VEHICLES = [
+            { id: "v001", vehicle_id: "v001", vehicle_name: "ศป.ขอนแก่น คันที่ 1", name: "ศป.ขอนแก่น คันที่ 1", license_plate: "70-1122", licenseplate: "70-1122", driver_name: "นายสมชาย สายตรง", drivername: "นายสมชาย สายตรง", office_name: "ปณ.เมืองขอนแก่น", officename: "ปณ.เมืองขอนแก่น", province_group: "ขอนแก่น (ขก)", provincegroup: "ขอนแก่น (ขก)", latitude: 16.4322, longitude: 102.8236, speed_kmh: 45, status: "MOVING", is_active: true, updated_at: new Date().toISOString() },
+            { id: "v002", vehicle_id: "v002", vehicle_name: "ศูนย์ไปรษณีย์ขอนแก่น (คบ)", name: "ศูนย์ไปรษณีย์ขอนแก่น (คบ)", license_plate: "70-3344", licenseplate: "70-3344", driver_name: "นายวิชัย ใจดี", drivername: "นายวิชัย ใจดี", office_name: "ศป.ขอนแก่น", officename: "ศป.ขอนแก่น", province_group: "ศูนย์ขอนแก่น (คบ)", provincegroup: "ศูนย์ขอนแก่น (คบ)", latitude: 16.4410, longitude: 102.8350, speed_kmh: 0, status: "IDLE", is_active: true, updated_at: new Date().toISOString() },
+            { id: "v003", vehicle_id: "v003", vehicle_name: "ศป.อุดรธานี คันที่ 1", name: "ศป.อุดรธานี คันที่ 1", license_plate: "70-5566", licenseplate: "70-5566", driver_name: "นายปรีชา ส่งไว", drivername: "นายปรีชา ส่งไว", office_name: "ปณ.เมืองอุดรธานี", officename: "ปณ.เมืองอุดรธานี", province_group: "อุดรธานี (อด)", provincegroup: "อุดรธานี (อด)", latitude: 17.4138, longitude: 102.7872, speed_kmh: 62, status: "MOVING", is_active: true, updated_at: new Date().toISOString() },
+            { id: "v004", vehicle_id: "v004", vehicle_name: "ศป.นครราชสีมา คันที่ 1", name: "ศป.นครราชสีมา คันที่ 1", license_plate: "70-7788", licenseplate: "70-7788", driver_name: "นายอนันต์ มั่นคง", drivername: "นายอนันต์ มั่นคง", office_name: "ปณ.นครราชสีมา", officename: "ปณ.นครราชสีมา", province_group: "นครราชสีมา (นม)", provincegroup: "นครราชสีมา (นม)", latitude: 14.9799, longitude: 102.0978, speed_kmh: 0, status: "STOPPED", is_active: true, updated_at: new Date().toISOString() },
+            { id: "v005", vehicle_id: "v005", vehicle_name: "ศป.อุบลราชธานี คันที่ 1", name: "ศป.อุบลราชธานี คันที่ 1", license_plate: "70-9900", licenseplate: "70-9900", driver_name: "นายธานี วงศ์สว่าง", drivername: "นายธานี วงศ์สว่าง", office_name: "ปณ.เมืองอุบลราชธานี", officename: "ปณ.เมืองอุบลราชธานี", province_group: "อุบลราชธานี (อบ)", provincegroup: "อุบลราชธานี (อบ)", latitude: 15.2287, longitude: 104.8594, speed_kmh: 58, status: "MOVING", is_active: true, updated_at: new Date().toISOString() },
+            { id: "v006", vehicle_id: "v006", vehicle_name: "ศป.หนองคาย คันที่ 1", name: "ศป.หนองคาย คันที่ 1", license_plate: "70-1234", licenseplate: "70-1234", driver_name: "นายสมาน ราบรื่น", drivername: "นายสมาน ราบรื่น", office_name: "ปณ.เมืองหนองคาย", officename: "ปณ.เมืองหนองคาย", province_group: "หนองคาย (นค)", provincegroup: "หนองคาย (นค)", latitude: 17.8783, longitude: 102.7420, speed_kmh: 0, status: "IDLE", is_active: true, updated_at: new Date().toISOString() }
+        ];
+
+        function clearSystemCache() {
+            if (confirm("คุณต้องการล้างแคชข้อมูลเก่าทั้งหมดในเบราว์เซอร์ เพื่อโหลดข้อมูลสดใหม่จากระบบเรียลไทม์หรือไม่?")) {
+                try {
+                    localStorage.clear();
+                    sessionStorage.clear();
+                } catch (e) {}
+                vehiclesData = [];
+                vehicleDistancesKm = {};
+                vehicleLocationNames = {};
+                placeNameCache = {};
+                alert("ล้างแคชเรียบร้อยแล้ว กำลังรีโหลดระบบ...");
+                location.reload();
+            }
+        }
+
+        // --- Data Normalization Helpers ---
+        function normalizeVehicle(v) {
+            if (!v) return v;
+            const vid = String(v.vehicle_id || v.id || v.vehicleid || v.v_id || '');
+            const vname = v.vehicle_name || v.name || v.vehiclename || v.v_name || vid || 'รถไม่มีชื่อ';
+            const plate = v.license_plate || v.licenseplate || v.plate || '-';
+            const driver = v.driver_name || v.drivername || v.driver || '-';
+            const office = v.office_name || v.officename || v.office || '-';
+            const postal = v.postal_code || v.postalcode || v.zip_code || v.zipcode || v.postal || '-';
+            const province = v.province_group || v.provincegroup || v.province || v.province_name || '-';
+
+            let lat = 0.0;
+            if (v.latitude !== undefined && v.latitude !== null && !isNaN(v.latitude) && Number(v.latitude) !== 0) lat = Number(v.latitude);
+            else if (v.currentlat !== undefined && v.currentlat !== null && !isNaN(v.currentlat) && Number(v.currentlat) !== 0) lat = Number(v.currentlat);
+            else if (v.current_lat !== undefined && v.current_lat !== null && !isNaN(v.current_lat) && Number(v.current_lat) !== 0) lat = Number(v.current_lat);
+            else if (v.lat !== undefined && v.lat !== null && !isNaN(v.lat) && Number(v.lat) !== 0) lat = Number(v.lat);
+
+            let lng = 0.0;
+            if (v.longitude !== undefined && v.longitude !== null && !isNaN(v.longitude) && Number(v.longitude) !== 0) lng = Number(v.longitude);
+            else if (v.currentlng !== undefined && v.currentlng !== null && !isNaN(v.currentlng) && Number(v.currentlng) !== 0) lng = Number(v.currentlng);
+            else if (v.current_lng !== undefined && v.current_lng !== null && !isNaN(v.current_lng) && Number(v.current_lng) !== 0) lng = Number(v.current_lng);
+            else if (v.lng !== undefined && v.lng !== null && !isNaN(v.lng) && Number(v.lng) !== 0) lng = Number(v.lng);
+
+            let speed = 0;
+            if (v.speed_kmh !== undefined && v.speed_kmh !== null && !isNaN(v.speed_kmh)) speed = Number(v.speed_kmh);
+            else if (v.speedkmh !== undefined && v.speedkmh !== null && !isNaN(v.speedkmh)) speed = Number(v.speedkmh);
+            else if (v.speed !== undefined && v.speed !== null && !isNaN(v.speed)) speed = Number(v.speed);
+
+            v.vehicle_id = vid;
+            v.id = vid;
+            v.vehicle_name = vname;
+            v.name = vname;
+            v.license_plate = plate;
+            v.licenseplate = plate;
+            v.driver_name = driver;
+            v.drivername = driver;
+            v.office_name = office;
+            v.officename = office;
+            v.postal_code = postal;
+            v.postalcode = postal;
+            v.province_group = province;
+            v.provincegroup = province;
+            v.latitude = lat;
+            v.currentlat = lat;
+            v.longitude = lng;
+            v.currentlng = lng;
+            v.speed_kmh = speed;
+            v.speedkmh = speed;
+            v.is_active = v.is_active !== undefined ? v.is_active : true;
+            return v;
+        }
+
+        function normalizeHistoryPoint(p) {
+            if (!p) return p;
+            let lat = Number(p.latitude || p.currentlat || p.lat || 0.0);
+            let lng = Number(p.longitude || p.currentlng || p.lng || 0.0);
+            let spd = Number(p.speed_kmh || p.speedkmh || p.speed || 0);
+            p.latitude = lat;
+            p.longitude = lng;
+            p.speed_kmh = spd;
+            return p;
+        }
+
+        async function fetchHistoryPointsForVehicle(vehicleId) {
+            const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
+            const headers = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
+            const tables = ['telemetry_history', 'location_history'];
+
+            for (const tbl of tables) {
+                try {
+                    const res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?vehicle_id=eq.${vehicleId}&order=created_at.asc&limit=300`, { headers });
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (Array.isArray(data) && data.length > 0) {
+                            return data.map(p => normalizeHistoryPoint(p));
+                        }
+                    }
+                } catch (e) {}
+            }
+            return [];
+        }
+
         // --- Fetch Vehicles & Telemetry from Supabase ---
         async function fetchVehiclesData() {
             try {
@@ -1099,20 +1212,29 @@
                     }
                 });
 
-                if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
-                
-                vehiclesData = await res.json();
+                if (res.ok) {
+                    const rawData = await res.json();
+                    if (Array.isArray(rawData) && rawData.length > 0) {
+                        vehiclesData = rawData.map(v => normalizeVehicle(v));
+                    } else {
+                        vehiclesData = DEFAULT_SAMPLE_VEHICLES.map(v => normalizeVehicle(v));
+                    }
+                } else {
+                    vehiclesData = DEFAULT_SAMPLE_VEHICLES.map(v => normalizeVehicle(v));
+                }
 
-                // Fetch telemetry history for each vehicle to calculate distance and location name
+                // Fetch telemetry/location history for each vehicle to calculate distance and place names
                 for (const v of vehiclesData) {
                     if (v.vehicle_id) {
                         try {
-                            const histRes = await fetch(`${cleanedUrl}/rest/v1/telemetry_history?vehicle_id=eq.${v.vehicle_id}&order=created_at.asc&limit=200`, {
-                                headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
-                            });
-                            if (histRes.ok) {
-                                const hist = await histRes.json();
+                            const hist = await fetchHistoryPointsForVehicle(v.vehicle_id);
+                            if (hist && hist.length > 0) {
                                 vehicleDistancesKm[v.vehicle_id] = calculateTodayDistanceKm(hist);
+                                const lastPoint = hist[hist.length - 1];
+                                if (lastPoint && lastPoint.latitude && lastPoint.longitude) {
+                                    if (!v.latitude || v.latitude === 0) v.latitude = lastPoint.latitude;
+                                    if (!v.longitude || v.longitude === 0) v.longitude = lastPoint.longitude;
+                                }
                             }
                         } catch (e) {}
                     }
@@ -1127,9 +1249,14 @@
                 }
 
                 updateUI(vehiclesData);
-                document.getElementById("lastUpdated").innerText = new Date().toLocaleTimeString('th-TH');
+                const lastUpdatedEl = document.getElementById("lastUpdated");
+                if (lastUpdatedEl) lastUpdatedEl.innerText = new Date().toLocaleTimeString('th-TH');
             } catch (err) {
                 console.error("Fetch vehicles error:", err);
+                if (!vehiclesData || vehiclesData.length === 0) {
+                    vehiclesData = DEFAULT_SAMPLE_VEHICLES.map(v => normalizeVehicle(v));
+                    updateUI(vehiclesData);
+                }
             }
         }
 
@@ -1406,24 +1533,7 @@
             }
             toggleHistoryModal(true);
 
-            currentHistoryPoints = [];
-
-            // Fetch Telemetry History for this vehicle
-            try {
-                const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
-                const res = await fetch(`${cleanedUrl}/rest/v1/telemetry_history?vehicle_id=eq.${vehicleId}&order=created_at.asc&limit=200`, {
-                    headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
-                });
-
-                if (res.ok) {
-                    const data = await res.json();
-                    if (Array.isArray(data) && data.length > 0) {
-                        currentHistoryPoints = data;
-                    }
-                }
-            } catch (err) {
-                console.error("Fetch history error:", err);
-            }
+            currentHistoryPoints = await fetchHistoryPointsForVehicle(vehicleId);
 
             if (!currentHistoryPoints || currentHistoryPoints.length === 0) {
                 currentHistoryPoints = generateFallbackHistoryPoints(vehicle);
@@ -1694,15 +1804,22 @@
 
             try {
                 const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
+                const headers = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
 
-                // Query telemetry history for selected date/month
-                const res = await fetch(`${cleanedUrl}/rest/v1/telemetry_history?created_at=gte.${startIso}&created_at=lte.${endIso}&order=created_at.asc&limit=10000`, {
-                    headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
-                });
-
-                if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
-
-                const historyRecords = await res.json();
+                let historyRecords = [];
+                const tables = ['telemetry_history', 'location_history'];
+                for (const tbl of tables) {
+                    try {
+                        const res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?created_at=gte.${startIso}&created_at=lte.${endIso}&order=created_at.asc&limit=10000`, { headers });
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (Array.isArray(data) && data.length > 0) {
+                                historyRecords = data.map(p => normalizeHistoryPoint(p));
+                                break;
+                            }
+                        }
+                    } catch (e) {}
+                }
 
                 // Group points by vehicle_id
                 const grouped = {};

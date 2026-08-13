@@ -1052,8 +1052,8 @@ fun AdminUserManagementScreen(viewModel: TrackingViewModel) {
     if (showAddVehicleDialog) {
         com.example.ui.screens.AddVehicleDialog(
             onDismiss = { showAddVehicleDialog = false },
-            onAdd = { name, plate, model, driver, office, provinceGroup ->
-                viewModel.addNewVehicle(name, plate, model, driver, office, provinceGroup)
+            onAdd = { name, plate, model, driver, office, postal, provinceGroup ->
+                viewModel.addNewVehicle(name, plate, model, driver, office, postal, provinceGroup)
                 showAddVehicleDialog = false
                 Toast.makeText(context, "เพิ่มยานพาหนะ $plate ($driver) เรียบร้อย!", Toast.LENGTH_SHORT).show()
             }

@@ -518,8 +518,8 @@ fun LiveTrackingScreen(
         if (showAddVehicleDialog) {
             AddVehicleDialog(
                 onDismiss = { showAddVehicleDialog = false },
-                onAdd = { name, plate, model, driver, office, provinceGroup ->
-                    viewModel.addNewVehicle(name, plate, model, driver, office, provinceGroup)
+                onAdd = { name, plate, model, driver, office, postal, provinceGroup ->
+                    viewModel.addNewVehicle(name, plate, model, driver, office, postal, provinceGroup)
                     showAddVehicleDialog = false
                     Toast.makeText(context, "เพิ่มยานพาหนะ $plate เรียบร้อย!", Toast.LENGTH_SHORT).show()
                 }
@@ -1396,13 +1396,14 @@ fun StatusChip(status: String, isLocked: Boolean, isOffline: Boolean = false) {
 @Composable
 fun AddVehicleDialog(
     onDismiss: () -> Unit,
-    onAdd: (name: String, licensePlate: String, modelYear: String, driverName: String, officeName: String, provinceGroup: String) -> Unit
+    onAdd: (name: String, licensePlate: String, modelYear: String, driverName: String, officeName: String, postalCode: String, provinceGroup: String) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var licensePlate by remember { mutableStateOf("") }
     var modelYear by remember { mutableStateOf("") }
     var driverName by remember { mutableStateOf("") }
     var officeName by remember { mutableStateOf("") }
+    var postalCode by remember { mutableStateOf("") }
     var provinceGroup by remember { mutableStateOf("ขอนแก่น") }
     var provinceDropdownExpanded by remember { mutableStateOf(false) }
 
@@ -1433,7 +1434,7 @@ fun AddVehicleDialog(
                 OutlinedTextField(
                     value = licensePlate,
                     onValueChange = { licensePlate = it },
-                    label = { Text("ป้ายทะเบียนรถ (เช่น 1กข-9999 กทม.)") },
+                    label = { Text("ป้ายทะเบียนรถ (เช่น 1ตท-3341 ขก, 70-1122 ขก)") },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color(0xFF1D1B20),
                         unfocusedTextColor = Color(0xFF1D1B20),
@@ -1472,8 +1473,22 @@ fun AddVehicleDialog(
                 OutlinedTextField(
                     value = officeName,
                     onValueChange = { officeName = it },
-                    label = { Text("🏢 ชื่อ ปจ./ปณ. (ชื่อที่ทำการ)") },
-                    placeholder = { Text("เช่น ปณ.เมืองขอนแก่น, ปจ.หนองคาย") },
+                    label = { Text("🏢 ชื่อ ปจ./ปณ./ศป. (ที่ทำการ)") },
+                    placeholder = { Text("เช่น ปณ.ขอนแก่น, ศป.ขอนแก่น") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color(0xFF1D1B20),
+                        unfocusedTextColor = Color(0xFF1D1B20),
+                        focusedBorderColor = Color(0xFF6750A4),
+                        unfocusedBorderColor = Color(0xFFCAC4D0)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = postalCode,
+                    onValueChange = { postalCode = it },
+                    label = { Text("📮 รหัสไปรษณีย์ (เช่น 40000, 40010)") },
+                    placeholder = { Text("เช่น 40000 (ปณ.ขอนแก่น) หรือ 40010 (ศป.ขอนแก่น)") },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color(0xFF1D1B20),
                         unfocusedTextColor = Color(0xFF1D1B20),
@@ -1556,7 +1571,15 @@ fun AddVehicleDialog(
                         val finalName = name.ifBlank { "รถขนส่ง $licensePlate" }
                         val finalDriver = driverName.ifBlank { "สมชาย ใจดี (คนขับ)" }
                         val finalOffice = officeName.ifBlank { "ปณ.เมืองขอนแก่น" }
-                        onAdd(finalName, licensePlate, modelYear, finalDriver, finalOffice, provinceGroup)
+                        val finalPostal = if (postalCode.isNotBlank()) postalCode else {
+                            if (finalOffice.contains("ศป.") || finalOffice.contains("ศูนย์ไปรษณีย์") || licensePlate.contains("70-1122")) "40010"
+                            else if (finalOffice.contains("น้ำพอง")) "40310"
+                            else if (finalOffice.contains("อุดรธานี")) "41000"
+                            else if (finalOffice.contains("นครราชสีมา")) "30000"
+                            else if (finalOffice.contains("อุบลราชธานี")) "34000"
+                            else "40000"
+                        }
+                        onAdd(finalName, licensePlate, modelYear, finalDriver, finalOffice, finalPostal, provinceGroup)
                     }
                 },
                 enabled = licensePlate.isNotBlank(),

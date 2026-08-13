@@ -42,6 +42,7 @@ object SampleData {
             isEngineLocked = false,
             driverName = "นายสมชาย ใจดี",
             officeName = "ปณ.เมืองขอนแก่น",
+            postalCode = "40000",
             provinceGroup = "ขอนแก่น (ขก)"
         ),
         VehicleEntity(
@@ -60,6 +61,7 @@ object SampleData {
             isEngineLocked = false,
             driverName = "นายวิชัย มั่นคง",
             officeName = "ปณ.เมืองขอนแก่น",
+            postalCode = "40000",
             provinceGroup = "ขอนแก่น (ขก)"
         ),
         VehicleEntity(
@@ -78,6 +80,7 @@ object SampleData {
             isEngineLocked = false,
             driverName = "นายประสิทธิ์ คำมี",
             officeName = "ปณ.เมืองขอนแก่น",
+            postalCode = "40000",
             provinceGroup = "ขอนแก่น (ขก)"
         ),
         VehicleEntity(
@@ -96,6 +99,7 @@ object SampleData {
             isEngineLocked = false,
             driverName = "นายณรงค์ สายชล",
             officeName = "ศูนย์ไปรษณีย์ขอนแก่น",
+            postalCode = "40010",
             provinceGroup = "ขอนแก่น (ขก)"
         ),
         VehicleEntity(
@@ -114,6 +118,7 @@ object SampleData {
             isEngineLocked = false,
             driverName = "นายอนุรักษ์ มีโชค",
             officeName = "ปณ.น้ำพอง",
+            postalCode = "40310",
             provinceGroup = "ขอนแก่น (ขก)"
         ),
         VehicleEntity(
@@ -132,6 +137,7 @@ object SampleData {
             isEngineLocked = false,
             driverName = "นายสมศักดิ์ นามดี",
             officeName = "ปณ.เมืองอุดรธานี",
+            postalCode = "41000",
             provinceGroup = "อุดรธานี (อด)"
         ),
         VehicleEntity(
@@ -150,6 +156,7 @@ object SampleData {
             isEngineLocked = false,
             driverName = "นายบุญมี มั่นใจ",
             officeName = "ปณ.เมืองนครราชสีมา",
+            postalCode = "30000",
             provinceGroup = "นครราชสีมา (นม)"
         ),
         VehicleEntity(
@@ -168,6 +175,7 @@ object SampleData {
             isEngineLocked = false,
             driverName = "นายเกียรติศักดิ์ ชัยชนะ",
             officeName = "ปณ.เมืองอุบลราชธานี",
+            postalCode = "34000",
             provinceGroup = "อุบลราชธานี (อบ)"
         )
     )
@@ -179,40 +187,52 @@ object SampleData {
     val INITIAL_USERS = listOf(
         UserEntity(
             id = "USR-001",
+            username = "U001",
             name = "นายสมชาย ใจดี",
             role = "DRIVER",
             phone = "081-234-5678",
+            password = "1234",
             officeName = "ปณ.เมืองขอนแก่น",
+            postalCode = "40000",
             provinceGroup = "ขอนแก่น (ขก)",
             assignedVehicleId = "V001",
             status = "ACTIVE"
         ),
         UserEntity(
             id = "USR-002",
+            username = "U002",
             name = "นายวิชัย มั่นคง",
             role = "DRIVER",
             phone = "089-876-5432",
+            password = "1234",
             officeName = "ปณ.เมืองขอนแก่น",
+            postalCode = "40000",
             provinceGroup = "ขอนแก่น (ขก)",
             assignedVehicleId = "V002",
             status = "ACTIVE"
         ),
         UserEntity(
             id = "USR-003",
-            name = "นายประเสริฐ คุมพื้นที่ (Manager)",
+            username = "U003",
+            name = "นายประเสริฐ คุมพื้นที่ (ศูนย์ขอนแก่น Manager)",
             role = "MANAGER",
             phone = "086-555-4321",
-            officeName = "ที่ทำการไปรษณีย์เขต 4",
+            password = "1234",
+            officeName = "ศูนย์ไปรษณีย์ขอนแก่น",
+            postalCode = "40010",
             provinceGroup = "ขอนแก่น (ขก)",
-            assignedVehicleId = "",
+            assignedVehicleId = "V004",
             status = "ACTIVE"
         ),
         UserEntity(
             id = "USR-004",
+            username = "admin",
             name = "ผู้ดูแลระบบศูนย์ควบคุม (Admin)",
             role = "ADMIN",
             phone = "02-999-8888",
+            password = "1234",
             officeName = "ศูนย์ไปรษณีย์ขอนแก่น",
+            postalCode = "40010",
             provinceGroup = "ทุกกลุ่มจังหวัด",
             assignedVehicleId = "",
             status = "ACTIVE"

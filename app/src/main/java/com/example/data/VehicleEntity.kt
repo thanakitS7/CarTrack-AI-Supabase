@@ -20,6 +20,7 @@ data class VehicleEntity(
     val isEngineLocked: Boolean = false,
     val driverName: String = "สมชาย ใจดี (คนขับ)",
     val officeName: String = "ปณ.เมืองขอนแก่น",
+    val postalCode: String = "40000",
     val provinceGroup: String = "ขอนแก่น",
     val lastUpdateMillis: Long = System.currentTimeMillis()
 )

@@ -280,36 +280,43 @@ fun LoginScreen(
                         )
 
                         Text(
-                            text = "💡 รหัสผ่านเริ่มต้นสำหรับผู้ใช้สาธิตคือ: 123456",
+                            text = "💡 บัญชีทดสอบ: U001, U002, manager, admin (รหัสผ่าน: 1234)",
                             color = Color(0xFF38BDF8),
                             fontSize = 11.sp
                         )
 
                         Button(
                             onClick = {
-                                if (loginInput.isBlank()) {
-                                    Toast.makeText(context, "กรุณากรอกเบอร์โทรศัพท์ หรือ ชื่อผู้ใช้", Toast.LENGTH_SHORT).show()
+                                val input = loginInput.trim()
+                                if (input.isBlank()) {
+                                    Toast.makeText(context, "กรุณากรอกเบอร์โทรศัพท์ หรือ ชื่อผู้ใช้ (เช่น U001)", Toast.LENGTH_SHORT).show()
                                     return@Button
                                 }
 
-                                // Match user by username, phone, name, or id
+                                // Match user by username, id, phone, name, or U00x alias
                                 val matchedUser = allUsers.find { u ->
-                                    (u.username.isNotBlank() && u.username.trim().equals(loginInput.trim(), ignoreCase = true)) ||
-                                    (u.phone.isNotBlank() && u.phone.trim() == loginInput.trim()) ||
-                                    (u.name.trim().contains(loginInput.trim(), ignoreCase = true)) ||
-                                    (u.id.trim() == loginInput.trim())
+                                    (u.username.isNotBlank() && u.username.equals(input, ignoreCase = true)) ||
+                                    (u.id.equals(input, ignoreCase = true)) ||
+                                    (u.id.replace("USR-", "U").equals(input, ignoreCase = true)) ||
+                                    (u.phone.isNotBlank() && u.phone == input) ||
+                                    (u.name.contains(input, ignoreCase = true))
                                 }
 
                                 if (matchedUser != null) {
-                                    if (matchedUser.password.isNotBlank() && matchedUser.password != loginPassword) {
-                                        Toast.makeText(context, "❌ รหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง", Toast.LENGTH_SHORT).show()
+                                    val isPassValid = matchedUser.password.isBlank() ||
+                                            matchedUser.password == loginPassword.trim() ||
+                                            (matchedUser.password == "1234" && (loginPassword.trim() == "1234" || loginPassword.trim() == "123456")) ||
+                                            (matchedUser.password == "123456" && (loginPassword.trim() == "1234" || loginPassword.trim() == "123456"))
+
+                                    if (!isPassValid) {
+                                        Toast.makeText(context, "❌ รหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง (ลอง 1234)", Toast.LENGTH_SHORT).show()
                                     } else {
                                         viewModel.loginUser(matchedUser)
                                         onLoginSuccess(matchedUser)
                                         Toast.makeText(context, "เข้าสู่ระบบสำเร็จ! ยินดีต้อนรับ ${matchedUser.name}", Toast.LENGTH_SHORT).show()
                                     }
                                 } else {
-                                    Toast.makeText(context, "❌ ไม่พบผู้ใช้งานที่ระบุ กรุณาสมัครสมาชิกก่อน", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "❌ ไม่พบผู้ใช้งาน '$input' (ลองใช้ U001, U002 หรือแถบ 'เลือกด่วน')", Toast.LENGTH_LONG).show()
                                 }
                             },
                             modifier = Modifier
