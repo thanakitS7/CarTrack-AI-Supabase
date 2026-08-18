@@ -19,7 +19,7 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    # ล็อคเวอร์ชัน Gradle เป็น 8.11.1 (เวอร์ชันที่เสถียรและเข้ากับ Android Gradle Plugin 8.7+ และ KSP ได้ 100%)
+    # ล็อคเวอร์ชัน Gradle เป็น 8.11.1
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
       with:
@@ -29,11 +29,41 @@ jobs:
     - name: Create missing .env.example file
       run: touch .env.example
 
-    # สร้างไฟล์หลอก google-services.json ป้องกัน Plugin เออเร่อ
+    # สร้างไฟล์จำลอง google-services.json ที่มี package_name ตรงกับ com.aistudio.cartracker.v89q
     - name: Create Mock google-services.json
       run: |
         mkdir -p app
-        echo '{"project_info":{"project_number":"123456789","project_id":"dummy-app"},"client":[{"client_info":{"mobilesdk_app_id":"1:123456789:android:abcdef"}}]}' > app/google-services.json
+        cat << 'EOF' > app/google-services.json
+        {
+          "project_info": {
+            "project_number": "123456789",
+            "project_id": "cartrack-app",
+            "storage_bucket": "cartrack-app.appspot.com"
+          },
+          "client": [
+            {
+              "client_info": {
+                "mobilesdk_app_id": "1:123456789:android:abcdef123456",
+                "android_client_info": {
+                  "package_name": "com.aistudio.cartracker.v89q"
+                }
+              },
+              "oauth_client": [],
+              "api_key": [
+                {
+                  "current_key": "AIzaSyDummyKeyForBuild123456789"
+                }
+              ],
+              "services": {
+                "appinvite_service": {
+                  "other_platform_oauth_client": []
+                }
+              }
+            }
+          ],
+          "configuration_version": "1"
+        }
+        EOF
 
     - name: Generate Debug Keystore
       run: keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
