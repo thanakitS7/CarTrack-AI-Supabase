@@ -85,45 +85,20 @@ fun VehicleSelectionScreen(
     var newLicensePlate by remember { mutableStateOf("") }
     var newDriverName by remember { mutableStateOf(user.name) }
 
-    // Office matching helper: Flexible match for office names, postal codes & roles
+    // Match user postal_code with vehicle post_id
     fun isMatchingOffice(user: com.example.data.UserEntity, vehicle: com.example.data.VehicleEntity): Boolean {
         val userPostal = user.postalCode.trim()
         val vehiclePostal = vehicle.postalCode.trim()
 
-        // 1. If both have non-blank postal codes, strict check on postal code
         if (userPostal.isNotBlank() && vehiclePostal.isNotBlank()) {
             return userPostal == vehiclePostal
         }
 
-        // 2. Normalize and check office names
         val u = user.officeName.trim().lowercase()
         val v = vehicle.officeName.trim().lowercase()
-
-        if (u.isBlank() || v.isBlank()) {
-            // Fallback to province group if office names are blank
-            if (user.provinceGroup.isNotBlank() && vehicle.provinceGroup.isNotBlank()) {
-                val uProv = user.provinceGroup.replace(Regex("\\(.*\\)"), "").trim()
-                val vProv = vehicle.provinceGroup.replace(Regex("\\(.*\\)"), "").trim()
-                return uProv == vProv || uProv.contains(vProv) || vProv.contains(uProv)
-            }
-            return false
+        if (u.isNotBlank() && v.isNotBlank() && (u == v || u.contains(v) || v.contains(u))) {
+            return true
         }
-
-        val cleanRegex = Regex("(ปณ\\.|ศป\\.|ศูนย์ไปรษณีย์|ที่ทำการไปรษณีย์|ที่ทำการ|เขต\\s*\\d*|เมือง)")
-        val uClean = u.replace(cleanRegex, "").trim()
-        val vClean = v.replace(cleanRegex, "").trim()
-
-        if (uClean.isNotEmpty() && vClean.isNotEmpty()) {
-            if (uClean == vClean || uClean.contains(vClean) || vClean.contains(uClean)) {
-                return true
-            }
-        }
-
-        val keywords = listOf("ขอนแก่น", "น้ำพอง", "อุดร", "โคราช", "นครราชสีมา", "อุบล")
-        for (kw in keywords) {
-            if (u.contains(kw) && v.contains(kw)) return true
-        }
-
         return false
     }
 

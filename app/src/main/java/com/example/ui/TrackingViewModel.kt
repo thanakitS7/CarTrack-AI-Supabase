@@ -1050,17 +1050,35 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                         }
                     }
                     if (vId.isNotBlank()) {
-                        val name = jsonObj.optString("name").ifBlank {
-                            jsonObj.optString("vehicle_name").ifBlank {
-                                jsonObj.optString("vehicleName").ifBlank {
-                                    jsonObj.optString("ชื่อรถ", "Vehicle $vId")
+                        val plate = jsonObj.optString("license_plate").ifBlank {
+                            jsonObj.optString("licenseplate").ifBlank {
+                                jsonObj.optString("licensePlate").ifBlank {
+                                    jsonObj.optString("ทะเบียนรถ", "-")
                                 }
                             }
                         }
-                        val plate = jsonObj.optString("licenseplate").ifBlank {
-                            jsonObj.optString("license_plate").ifBlank {
-                                jsonObj.optString("licensePlate").ifBlank {
-                                    jsonObj.optString("ทะเบียนรถ", "-")
+                        val rawOffice = jsonObj.optString("workplace").ifBlank {
+                            jsonObj.optString("office_name").ifBlank {
+                                jsonObj.optString("officeName").ifBlank {
+                                    jsonObj.optString("officename", "")
+                                }
+                            }
+                        }
+                        val rawPostal = jsonObj.optString("post_id").ifBlank {
+                            jsonObj.optString("postal_code").ifBlank {
+                                jsonObj.optString("postalcode").ifBlank {
+                                    jsonObj.optString("zip_code").ifBlank {
+                                        jsonObj.optString("zipcode").ifBlank {
+                                            jsonObj.optString("รหัสไปรษณีย์", "")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        val name = jsonObj.optString("name").ifBlank {
+                            jsonObj.optString("vehicle_name").ifBlank {
+                                jsonObj.optString("vehicleName").ifBlank {
+                                    if (plate.isNotBlank() && plate != "-") "รถ $plate" else "Vehicle $vId"
                                 }
                             }
                         }
@@ -1070,20 +1088,6 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                         val rawDriver = jsonObj.optString("driver_name").ifBlank {
                             jsonObj.optString("driverName").ifBlank {
                                 jsonObj.optString("drivername", "")
-                            }
-                        }
-                        val rawOffice = jsonObj.optString("office_name").ifBlank {
-                            jsonObj.optString("officeName").ifBlank {
-                                jsonObj.optString("officename", "")
-                            }
-                        }
-                        val rawPostal = jsonObj.optString("postal_code").ifBlank {
-                            jsonObj.optString("postalcode").ifBlank {
-                                jsonObj.optString("zip_code").ifBlank {
-                                    jsonObj.optString("zipcode").ifBlank {
-                                        jsonObj.optString("รหัสไปรษณีย์", "")
-                                    }
-                                }
                             }
                         }
                         val rawProvince = jsonObj.optString("province_group").ifBlank {

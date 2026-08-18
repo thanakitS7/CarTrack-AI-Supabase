@@ -119,7 +119,7 @@
                 <div class="flex items-center space-x-1.5">
                     <div class="relative flex-1">
                         <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
-                        <input type="text" id="searchInput" oninput="filterVehicles()" placeholder="ค้นหาชื่อรถ / ทะเบียน / คนขับ..." 
+                        <input type="text" id="searchInput" oninput="filterVehicles()" placeholder="ค้นหาชื่อรถ / ทะเบียน / ที่ทำการ..." 
                                class="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-100 focus:outline-none focus:border-sky-500 placeholder-slate-500">
                     </div>
                     <button onclick="clearSearch()" title="ล้างค่าการค้นหา" class="bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-slate-200 px-3 py-2 rounded-lg text-xs font-medium transition flex items-center space-x-1 shrink-0 border border-slate-600">
@@ -1188,8 +1188,11 @@
             const vname = v.vehicle_name || v.name || v.vehiclename || v.v_name || vid || 'รถไม่มีชื่อ';
             const plate = v.license_plate || v.licenseplate || v.plate || '-';
             const driver = v.driver_name || v.drivername || v.driver || '-';
-            const office = v.office_name || v.officename || v.office || '-';
-            const postal = v.postal_code || v.postalcode || v.zip_code || v.zipcode || v.postal || '-';
+            const workplaceVal = (v.workplace !== undefined && v.workplace !== null && String(v.workplace).trim() !== '') 
+                ? String(v.workplace).trim() 
+                : ((v.office_name || v.officename || v.office || '').trim() || '-');
+            const office = workplaceVal;
+            const postal = v.postal_code || v.postalcode || v.post_id || v.postid || v.zip_code || v.zipcode || v.postal || '-';
             const province = v.province_group || v.provincegroup || v.province || v.province_name || '-';
 
             let lat = 0.0;
@@ -1217,8 +1220,10 @@
             v.licenseplate = plate;
             v.driver_name = driver;
             v.drivername = driver;
+            v.workplace = workplaceVal;
             v.office_name = office;
             v.officename = office;
+            v.post_id = postal;
             v.postal_code = postal;
             v.postalcode = postal;
             v.province_group = province;
@@ -1229,8 +1234,50 @@
             v.currentlng = lng;
             v.speed_kmh = speed;
             v.speedkmh = speed;
+            v.updated_at = v.updated_at || v.updatedat || v.last_updated || v.created_at || null;
             v.is_active = v.is_active !== undefined ? v.is_active : true;
             return v;
+        }
+
+        // Check if vehicle was active today (used for filtering today's active vehicles in dashboard)
+        function isVehicleActiveToday(v) {
+            if (!v) return false;
+
+            // 1. If currently moving or parked/idle with positive speed or active status
+            const st = getVehicleStatus(v);
+            if (st === "MOVING" || (v.speed_kmh && v.speed_kmh > 0)) return true;
+
+            // 2. Check distance traveled today
+            const dist = vehicleDistancesKm[v.vehicle_id || v.id];
+            if (dist && dist > 0.05) return true;
+
+            // 3. Check updated_at or timestamp field for today's date
+            const timeField = v.updated_at || v.updatedat || v.last_updated || v.last_seen || v.created_at;
+            if (timeField) {
+                try {
+                    const updateDate = new Date(timeField);
+                    const nowDate = new Date();
+                    const isSameDate = (
+                        updateDate.getFullYear() === nowDate.getFullYear() &&
+                        updateDate.getMonth() === nowDate.getMonth() &&
+                        updateDate.getDate() === nowDate.getDate()
+                    );
+                    if (isSameDate) return true;
+                } catch (e) {}
+            }
+
+            // 4. Check if vehicle has status of PARKED today or active
+            if (st === "PARKED" || st === "IDLE") {
+                // If it was updated in last 12 hours
+                if (timeField) {
+                    try {
+                        const diffMs = Date.now() - new Date(timeField).getTime();
+                        if (diffMs < 12 * 60 * 60 * 1000) return true;
+                    } catch (e) {}
+                }
+            }
+
+            return false;
         }
 
         function normalizeHistoryPoint(p) {
@@ -1324,11 +1371,11 @@
         function renderVehicleCardHTML(v) {
             const st = getVehicleStatus(v);
             let statusColor = "bg-amber-500/20 text-amber-400 border-amber-500/30";
-            let statusLabel = "จอดพัก (IDLE)";
+            let statusLabel = "จอดพัก";
 
             if (st === "OFFLINE") {
-                statusColor = "bg-rose-950/80 text-rose-300 border-rose-700/80";
-                statusLabel = "จอดพัก (GPS ดับ / ออฟไลน์)";
+                statusColor = "bg-slate-800 text-slate-400 border-slate-700";
+                statusLabel = "จอดพัก (ออฟไลน์)";
             } else if (st === "PARKED") {
                 statusColor = "bg-sky-950/90 text-sky-300 border-sky-700/80";
                 statusLabel = "🏁 ถึงที่หมายแล้ว";
@@ -1340,8 +1387,7 @@
             const isSelected = selectedVehicleId === v.vehicle_id;
             const distanceKm = (vehicleDistancesKm[v.vehicle_id] || 0.0).toFixed(1);
             const placeName = vehicleLocationNames[v.vehicle_id] || `กำลังค้นหาสถานที่ (${(v.latitude || 0).toFixed(3)}, ${(v.longitude || 0).toFixed(3)})`;
-            const driverDisplay = getDisplayDriverName(v);
-            const hasActiveDriver = !driverDisplay.includes("ไม่มีคนใช้งาน");
+            const workplaceDisplay = v.workplace || v.office_name || '-';
 
             return `
                 <div class="p-3 rounded-xl border transition ${isSelected ? 'bg-sky-950/80 border-sky-500' : 'bg-slate-900 border-slate-700/80 hover:border-slate-600'}">
@@ -1356,16 +1402,14 @@
                         </span>
                     </div>
 
-                    <div class="grid grid-cols-2 gap-2 mt-2 text-[11px] text-slate-300 bg-slate-800/50 p-2 rounded-lg cursor-pointer" onclick="selectVehicle('${v.vehicle_id}')">
-                        <div><i class="fa-solid fa-gauge text-amber-400 mr-1"></i>ความเร็ว: <strong class="text-white">${v.speed_kmh || 0} km/h</strong></div>
-                        <div>
-                            <i class="fa-solid fa-user-gear ${hasActiveDriver ? 'text-indigo-400' : 'text-slate-500'} mr-1"></i>คนขับ: 
-                            <span class="${hasActiveDriver ? 'text-sky-300 font-medium' : 'text-slate-500 italic'}">${hasActiveDriver ? driverDisplay : 'ไม่มีผู้ใช้งาน'}</span>
+                    <div class="mt-2 space-y-1 text-[11px] text-slate-300 bg-slate-800/50 p-2.5 rounded-lg cursor-pointer" onclick="selectVehicle('${v.vehicle_id}')">
+                        <div class="flex items-center justify-between">
+                            <div><i class="fa-solid fa-building text-emerald-400 mr-1.5"></i>ที่ทำการ: <span class="text-white font-medium">${workplaceDisplay}</span></div>
+                            <div><i class="fa-solid fa-gauge text-amber-400 mr-1"></i>ความเร็ว: <strong class="text-white">${v.speed_kmh || 0} km/h</strong></div>
                         </div>
-                        <div><i class="fa-solid fa-building text-emerald-400 mr-1"></i>ที่ทำการ: <span class="text-slate-200">${v.office_name || '-'}</span></div>
-                        <div><i class="fa-solid fa-map-location-dot text-indigo-400 mr-1"></i>กลุ่ม ปจ.: <span class="text-slate-200">${v.province_group || '-'}</span></div>
-                        <div class="col-span-2 text-sky-400 font-medium pt-0.5 border-t border-slate-700/50">
-                            <i class="fa-solid fa-route text-sky-400 mr-1"></i>ระยะทางวันนี้: <strong class="text-white">${distanceKm} กม.</strong>
+                        <div class="text-sky-400 font-medium pt-1 border-t border-slate-700/50 flex items-center justify-between">
+                            <span><i class="fa-solid fa-route mr-1"></i>ระยะทางวันนี้:</span>
+                            <strong class="text-white">${distanceKm} กม.</strong>
                         </div>
                     </div>
 
@@ -1386,22 +1430,24 @@
             const listEl = document.getElementById("vehicleList");
             const searchVal = document.getElementById("searchInput").value.toLowerCase();
 
-            const filtered = vehicles.filter(v => 
+            // Filter vehicles active today
+            const activeVehiclesToday = vehicles.filter(v => isVehicleActiveToday(v));
+
+            const filtered = activeVehiclesToday.filter(v => 
                 (v.vehicle_name || '').toLowerCase().includes(searchVal) ||
                 (v.license_plate || '').toLowerCase().includes(searchVal) ||
-                (v.driver_name || '').toLowerCase().includes(searchVal) ||
-                (v.province_group || '').toLowerCase().includes(searchVal) ||
+                (v.workplace || '').toLowerCase().includes(searchVal) ||
                 (v.office_name || '').toLowerCase().includes(searchVal)
             );
 
-            document.getElementById("totalVehiclesCount").innerText = vehicles.length;
+            document.getElementById("totalVehiclesCount").innerText = activeVehiclesToday.length;
             const mobCountEl = document.getElementById("mobileTotalCount");
-            if (mobCountEl) mobCountEl.innerText = vehicles.length;
+            if (mobCountEl) mobCountEl.innerText = activeVehiclesToday.length;
 
-            const movingCount = vehicles.filter(v => getVehicleStatus(v) === "MOVING").length;
-            const parkedCount = vehicles.filter(v => getVehicleStatus(v) === "PARKED").length;
-            const idleCount = vehicles.filter(v => getVehicleStatus(v) === "IDLE").length;
-            const offlineCount = vehicles.filter(v => getVehicleStatus(v) === "OFFLINE").length;
+            const movingCount = activeVehiclesToday.filter(v => getVehicleStatus(v) === "MOVING").length;
+            const parkedCount = activeVehiclesToday.filter(v => getVehicleStatus(v) === "PARKED").length;
+            const idleCount = activeVehiclesToday.filter(v => getVehicleStatus(v) === "IDLE").length;
+            const offlineCount = activeVehiclesToday.filter(v => getVehicleStatus(v) === "OFFLINE").length;
 
             document.getElementById("movingCount").innerText = movingCount;
             document.getElementById("idleCount").innerText = idleCount;
@@ -1411,7 +1457,7 @@
             if (offlineEl) offlineEl.innerText = offlineCount;
 
             if (filtered.length === 0) {
-                listEl.innerHTML = `<div class="text-center py-10 text-slate-500 text-xs">ไม่พบข้อมูลรถตรงกับคำค้นหา</div>`;
+                listEl.innerHTML = `<div class="text-center py-10 text-slate-500 text-xs">ไม่พบรถที่มีการใช้งานในวันนี้</div>`;
                 updateMobileTrackingCard();
                 return;
             }
@@ -1501,15 +1547,14 @@
                 });
 
                 const placeName = vehicleLocationNames[v.vehicle_id] || `${v.latitude.toFixed(4)}, ${v.longitude.toFixed(4)}`;
-                const driverDisplay = getDisplayDriverName(v);
-                const hasActiveDriver = !driverDisplay.includes("ไม่มีคนใช้งาน");
+                const workplaceDisplay = v.workplace || v.office_name || '-';
 
                 const popupContent = `
                     <div class="text-slate-900 font-sans p-1">
                         <strong class="text-sm text-sky-600 font-bold">${v.vehicle_name || v.vehicle_id}</strong><br>
                         <span class="text-xs text-slate-600">ทะเบียน: ${v.license_plate || '-'}</span><br>
                         <span class="text-xs font-semibold text-emerald-600">ความเร็ว: ${v.speed_kmh || 0} km/h</span><br>
-                        <span class="text-[11px] ${hasActiveDriver ? 'text-indigo-700 font-semibold' : 'text-slate-500'}">ผู้ขับขี่: ${hasActiveDriver ? driverDisplay : 'ไม่มีผู้ใช้งาน'}</span><br>
+                        <span class="text-[11px] text-slate-700 font-medium">ที่ทำการ: ${workplaceDisplay}</span><br>
                         <span class="text-[11px] text-slate-600">สถานที่: ${placeName}</span>
                     </div>
                 `;
@@ -1596,8 +1641,9 @@
             selectedVehicleId = vehicleId;
             const vehicle = vehiclesData.find(v => v.vehicle_id === vehicleId);
 
+            const wp = vehicle?.workplace || vehicle?.office_name || '-';
             document.getElementById("historyModalTitle").innerText = `ประวัติเส้นทาง: ${vehicle?.vehicle_name || vehicleId} (${vehicle?.license_plate || '-'})`;
-            document.getElementById("historyModalSub").innerText = `คนขับ: ${vehicle?.driver_name || '-'} • ประจำวันนี้`;
+            document.getElementById("historyModalSub").innerText = `ที่ทำการ: ${wp} • ประจำวันนี้`;
             
             if (typeof switchMobileTab === 'function') {
                 switchMobileTab('map');
