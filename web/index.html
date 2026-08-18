@@ -845,6 +845,24 @@
             if (map) map.invalidateSize();
         });
 
+        function isVehicleInactive(v) {
+            if (!v) return true;
+            const timeVal = v.updated_at || v.created_at || v.timestamp || v.last_updated || v.lastUpdateMillis || v.last_update_millis;
+            if (!timeVal) return false;
+
+            let lastTimeMs = 0;
+            if (typeof timeVal === 'number') {
+                lastTimeMs = timeVal;
+            } else {
+                lastTimeMs = new Date(timeVal).getTime();
+            }
+
+            if (isNaN(lastTimeMs) || lastTimeMs <= 0) return false;
+
+            const diffMs = Date.now() - lastTimeMs;
+            return diffMs > 3 * 60 * 1000; // > 3 minutes without GPS updates
+        }
+
         function isVehicleOffline(v) {
             if (!v) return true;
             const timeVal = v.updated_at || v.created_at || v.timestamp || v.last_updated || v.lastUpdateMillis || v.last_update_millis;
@@ -860,17 +878,55 @@
             if (isNaN(lastTimeMs) || lastTimeMs <= 0) return false;
 
             const diffMs = Date.now() - lastTimeMs;
-            return diffMs > 5 * 60 * 1000; // > 5 minutes without update
+            return diffMs > 10 * 60 * 1000; // > 10 minutes without update
         }
 
         function getVehicleStatus(v) {
-            if (!v) return "OFFLINE";
-            if (isVehicleOffline(v)) return "OFFLINE";
-            const st = (v.status || '').toUpperCase();
-            if (st.includes("OFFLINE")) return "OFFLINE";
-            if (st.includes("PARKED") || st.includes("ถึงเป้าหมาย") || st.includes("ARRIVED") || st.includes("DESTINATION")) return "PARKED";
-            if (st.includes("MOVING") || (v.speed_kmh || 0) > 3) return "MOVING";
-            return v.status || "IDLE";
+            if (!v) return "IDLE";
+            const rawStatus = (v.status || '').toUpperCase();
+            
+            // If explicit arrived / completed status
+            if (rawStatus.includes("COMPLETED") || rawStatus.includes("PARKED") || rawStatus.includes("ถึงเป้าหมาย") || rawStatus.includes("ถึงที่หมาย") || rawStatus.includes("ARRIVED") || rawStatus.includes("DESTINATION")) {
+                return "PARKED";
+            }
+
+            // Check if GPS has not sent updates for a while -> Auto set to จอดพัก or ถึงที่หมาย
+            if (isVehicleInactive(v)) {
+                if (rawStatus.includes("COMPLETED") || rawStatus.includes("PARKED")) {
+                    return "PARKED";
+                }
+                return "IDLE"; // จอดพัก (IDLE) เมื่อไม่มีการเคลื่อนไหวหรือ GPS ไม่ส่งข้อมูล
+            }
+
+            if (rawStatus.includes("MOVING") || (v.speed_kmh || 0) > 3) {
+                return "MOVING";
+            }
+
+            return "IDLE";
+        }
+
+        function getDisplayDriverName(v) {
+            if (!v) return "-";
+            const st = getVehicleStatus(v);
+            const rawStatus = (v.status || '').toUpperCase();
+            const rawDriver = (v.driver_name || v.drivername || v.driver || '').trim();
+
+            // If dummy or default generic driver name
+            const isPlaceholderDriver = !rawDriver || rawDriver === '-' || rawDriver === 'นายสมชาย ผู้ขับขี่' || rawDriver === 'ผู้ใช้งานระบบ' || rawDriver === 'ยังไม่มีผู้ใช้งาน';
+
+            // If not active / idle / offline / completed and no driver is actively operating
+            if (st === "PARKED" || st === "IDLE" || st === "OFFLINE" || !rawStatus.includes("MOVING") && !rawStatus.includes("IN_PROGRESS")) {
+                if (isPlaceholderDriver) {
+                    return "- (ไม่มีคนใช้งาน)";
+                }
+                // If it's a real name but status is parked/completed
+                if (st === "PARKED") {
+                    return `${rawDriver} (เสร็จสิ้นภารกิจ)`;
+                }
+                return `${rawDriver} (จอดพัก)`;
+            }
+
+            return isPlaceholderDriver ? "- (ไม่มีคนใช้งาน)" : rawDriver;
         }
 
         function updateMobileTrackingCard() {
@@ -891,17 +947,19 @@
             const st = getVehicleStatus(v);
             let statusBadge = "";
             if (st === "OFFLINE") {
-                statusBadge = `<span class="bg-rose-950/80 text-rose-300 border border-rose-700/80 px-2 py-0.5 rounded-full font-bold text-[10px]"><i class="fa-solid fa-wifi-slash mr-1 text-rose-400"></i>OFFLINE (ขาดเชื่อมต่อ >5 นาที)</span>`;
+                statusBadge = `<span class="bg-rose-950/80 text-rose-300 border border-rose-700/80 px-2 py-0.5 rounded-full font-bold text-[10px]"><i class="fa-solid fa-parking mr-1 text-rose-400"></i>จอดพัก (GPS ดับ / ออฟไลน์)</span>`;
             } else if (st === "PARKED") {
-                statusBadge = `<span class="bg-sky-950/90 text-sky-300 border border-sky-700/80 px-2 py-0.5 rounded-full font-bold text-[10px]"><i class="fa-solid fa-flag-checkered mr-1 text-sky-400"></i>🏁 ถึงเป้าหมายแล้ว</span>`;
+                statusBadge = `<span class="bg-sky-950/90 text-sky-300 border border-sky-700/80 px-2 py-0.5 rounded-full font-bold text-[10px]"><i class="fa-solid fa-flag-checkered mr-1 text-sky-400"></i>🏁 ถึงที่หมายแล้ว</span>`;
             } else if (st === "MOVING") {
                 statusBadge = `<span class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold text-[10px] animate-pulse"><i class="fa-solid fa-circle text-[6px] mr-1"></i>วิ่งอยู่ ${v.speed_kmh || 0} km/h</span>`;
             } else {
-                statusBadge = `<span class="bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold text-[10px]"><i class="fa-solid fa-parking mr-1"></i>จอดพัก / IDLE</span>`;
+                statusBadge = `<span class="bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold text-[10px]"><i class="fa-solid fa-parking mr-1"></i>จอดพัก (IDLE)</span>`;
             }
 
             const distanceKm = (vehicleDistancesKm[v.vehicle_id] || 0.0).toFixed(1);
             const placeName = vehicleLocationNames[v.vehicle_id] || `พิกัด ${(v.latitude || 0).toFixed(4)}, ${(v.longitude || 0).toFixed(4)}`;
+            const driverDisplay = getDisplayDriverName(v);
+            const hasActiveDriver = !driverDisplay.includes("ไม่มีคนใช้งาน");
 
             card.innerHTML = `
                 <div class="flex items-center justify-between pb-1.5 border-b border-slate-800">
@@ -911,7 +969,9 @@
                         </div>
                         <div class="truncate">
                             <h4 class="font-bold text-white text-xs truncate">${v.vehicle_name || v.vehicle_id} <span class="text-[10px] text-slate-400">(${v.license_plate || '-'})</span></h4>
-                            <p class="text-[10px] text-slate-400 truncate">คนขับ: ${v.driver_name || '-'} • ${v.office_name || v.province_group || ''}</p>
+                            <p class="text-[10px] text-slate-400 truncate">
+                                <span class="${hasActiveDriver ? 'text-sky-300 font-medium' : 'text-slate-500'}">คนขับ: ${hasActiveDriver ? driverDisplay : 'ไม่มีผู้ใช้งาน'}</span> • ${v.office_name || v.province_group || ''}
+                            </p>
                         </div>
                     </div>
                     <div class="flex items-center space-x-1 shrink-0">
@@ -1095,14 +1155,15 @@
             return fallback;
         }
 
-        // --- Default Sample Vehicles Fallback ---
+        // --- Supabase Live Vehicles Baseline ---
         const DEFAULT_SAMPLE_VEHICLES = [
-            { id: "v001", vehicle_id: "v001", vehicle_name: "ศป.ขอนแก่น คันที่ 1", name: "ศป.ขอนแก่น คันที่ 1", license_plate: "70-1122", licenseplate: "70-1122", driver_name: "นายสมชาย สายตรง", drivername: "นายสมชาย สายตรง", office_name: "ปณ.เมืองขอนแก่น", officename: "ปณ.เมืองขอนแก่น", province_group: "ขอนแก่น (ขก)", provincegroup: "ขอนแก่น (ขก)", latitude: 16.4322, longitude: 102.8236, speed_kmh: 45, status: "MOVING", is_active: true, updated_at: new Date().toISOString() },
-            { id: "v002", vehicle_id: "v002", vehicle_name: "ศูนย์ไปรษณีย์ขอนแก่น (คบ)", name: "ศูนย์ไปรษณีย์ขอนแก่น (คบ)", license_plate: "70-3344", licenseplate: "70-3344", driver_name: "นายวิชัย ใจดี", drivername: "นายวิชัย ใจดี", office_name: "ศป.ขอนแก่น", officename: "ศป.ขอนแก่น", province_group: "ศูนย์ขอนแก่น (คบ)", provincegroup: "ศูนย์ขอนแก่น (คบ)", latitude: 16.4410, longitude: 102.8350, speed_kmh: 0, status: "IDLE", is_active: true, updated_at: new Date().toISOString() },
-            { id: "v003", vehicle_id: "v003", vehicle_name: "ศป.อุดรธานี คันที่ 1", name: "ศป.อุดรธานี คันที่ 1", license_plate: "70-5566", licenseplate: "70-5566", driver_name: "นายปรีชา ส่งไว", drivername: "นายปรีชา ส่งไว", office_name: "ปณ.เมืองอุดรธานี", officename: "ปณ.เมืองอุดรธานี", province_group: "อุดรธานี (อด)", provincegroup: "อุดรธานี (อด)", latitude: 17.4138, longitude: 102.7872, speed_kmh: 62, status: "MOVING", is_active: true, updated_at: new Date().toISOString() },
-            { id: "v004", vehicle_id: "v004", vehicle_name: "ศป.นครราชสีมา คันที่ 1", name: "ศป.นครราชสีมา คันที่ 1", license_plate: "70-7788", licenseplate: "70-7788", driver_name: "นายอนันต์ มั่นคง", drivername: "นายอนันต์ มั่นคง", office_name: "ปณ.นครราชสีมา", officename: "ปณ.นครราชสีมา", province_group: "นครราชสีมา (นม)", provincegroup: "นครราชสีมา (นม)", latitude: 14.9799, longitude: 102.0978, speed_kmh: 0, status: "STOPPED", is_active: true, updated_at: new Date().toISOString() },
-            { id: "v005", vehicle_id: "v005", vehicle_name: "ศป.อุบลราชธานี คันที่ 1", name: "ศป.อุบลราชธานี คันที่ 1", license_plate: "70-9900", licenseplate: "70-9900", driver_name: "นายธานี วงศ์สว่าง", drivername: "นายธานี วงศ์สว่าง", office_name: "ปณ.เมืองอุบลราชธานี", officename: "ปณ.เมืองอุบลราชธานี", province_group: "อุบลราชธานี (อบ)", provincegroup: "อุบลราชธานี (อบ)", latitude: 15.2287, longitude: 104.8594, speed_kmh: 58, status: "MOVING", is_active: true, updated_at: new Date().toISOString() },
-            { id: "v006", vehicle_id: "v006", vehicle_name: "ศป.หนองคาย คันที่ 1", name: "ศป.หนองคาย คันที่ 1", license_plate: "70-1234", licenseplate: "70-1234", driver_name: "นายสมาน ราบรื่น", drivername: "นายสมาน ราบรื่น", office_name: "ปณ.เมืองหนองคาย", officename: "ปณ.เมืองหนองคาย", province_group: "หนองคาย (นค)", provincegroup: "หนองคาย (นค)", latitude: 17.8783, longitude: 102.7420, speed_kmh: 0, status: "IDLE", is_active: true, updated_at: new Date().toISOString() }
+            { id: "V001", vehicle_id: "V001", vehicle_name: "รถบรรทุกตู้ใหญ่ 6 ล้อ (ขนส่งด่วนขอนแก่น-กรุงเทพฯ)", name: "รถบรรทุกตู้ใหญ่ 6 ล้อ (ขนส่งด่วนขอนแก่น-กรุงเทพฯ)", license_plate: "83-4521 ขก", licenseplate: "83-4521 ขก", modelyear: "2024", driver_name: "นายสมชาย ผู้ขับขี่", drivername: "นายสมชาย ผู้ขับขี่", office_name: "ปณ.เมืองขอนแก่น", officename: "ปณ.เมืองขอนแก่น", province_group: "ขอนแก่น (ขก)", provincegroup: "ขอนแก่น (ขก)", latitude: 16.44424086, longitude: 102.79357396, speed_kmh: 68, status: "IDLE", is_active: true, fuel_percent: 88, fuelpercent: 88, battery_voltage: 24.2, battery: 24.2 },
+            { id: "V002", vehicle_id: "V002", vehicle_name: "รถตู้ส่งพัสดุด่วน EMS ปณ.ขอนแก่น #1", name: "รถตู้ส่งพัสดุด่วน EMS ปณ.ขอนแก่น #1", license_plate: "ผก-9812 ขก", licenseplate: "ผก-9812 ขก", modelyear: "2024", driver_name: "อามเอง", drivername: "อามเอง", office_name: "ปณ.ขอนแก่น", officename: "ปณ.ขอนแก่น", province_group: "ขอนแก่น (ขก)", provincegroup: "ขอนแก่น (ขก)", latitude: 16.4442308, longitude: 102.8300232, speed_kmh: 0, status: "MOVING", is_active: true, fuel_percent: 95, fuelpercent: 95, battery_voltage: 12.8, battery: 12.8 },
+            { id: "V003", vehicle_id: "V003", vehicle_name: "รถกระบะขนส่งตู้ทึบ ปณ.เมืองขอนแก่น #2", name: "รถกระบะขนส่งตู้ทึบ ปณ.เมืองขอนแก่น #2", license_plate: "1ตท-3341 ขก", licenseplate: "1ตท-3341 ขก", modelyear: "2024", driver_name: "นายสมชาย ผู้ขับขี่", drivername: "นายสมชาย ผู้ขับขี่", office_name: "ปณ.เมืองขอนแก่น", officename: "ปณ.เมืองขอนแก่น", province_group: "ขอนแก่น (ขก)", provincegroup: "ขอนแก่น (ขก)", latitude: 16.441, longitude: 102.836, speed_kmh: 42, status: "MOVING", is_active: true, fuel_percent: 74, fuelpercent: 74, battery_voltage: 12.7, battery: 12.7 },
+            { id: "V004", vehicle_id: "V004", vehicle_name: "รถบรรทุกเทรลเลอร์ 10 ล้อ ศูนย์ไปรษณีย์ขอนแก่น", name: "รถบรรทุกเทรลเลอร์ 10 ล้อ ศูนย์ไปรษณีย์ขอนแก่น", license_plate: "70-1122 ขก", licenseplate: "70-1122 ขก", modelyear: "2024", driver_name: "ธนกฤต เทิงสูงเนิน", drivername: "ธนกฤต เทิงสูงเนิน", office_name: "ศูนย์ไปรษณีย์ขอนแก่น", officename: "ศูนย์ไปรษณีย์ขอนแก่น", province_group: "ศูนย์ขอนแก่น (ศป)", provincegroup: "ศูนย์ขอนแก่น (ศป)", latitude: 16.4812, longitude: 102.818, speed_kmh: 72, status: "MOVING", is_active: true, fuel_percent: 82, fuelpercent: 82, battery_voltage: 24.5, battery: 24.5 },
+            { id: "V005", vehicle_id: "V005", vehicle_name: "รถกระบะส่งพัสดุ ปณ.น้ำพอง", name: "รถกระบะส่งพัสดุ ปณ.น้ำพอง", license_plate: "ผก-4411 ขก", licenseplate: "ผก-4411 ขก", modelyear: "2022", driver_name: "นายสมชาย ผู้ขับขี่", drivername: "นายสมชาย ผู้ขับขี่", office_name: "ปณ.น้ำพอง", officename: "ปณ.น้ำพอง", province_group: "ขอนแก่น (ขก)", provincegroup: "ขอนแก่น (ขก)", latitude: 16.821, longitude: 102.802, speed_kmh: 0, status: "STOPPED", is_active: true, fuel_percent: 65, fuelpercent: 65, battery_voltage: 12.5, battery: 12.5 },
+            { id: "V006", vehicle_id: "V006", vehicle_name: "รถตู้ส่งด่วน EMS ปณ.เมืองอุดรธานี", name: "รถตู้ส่งด่วน EMS ปณ.เมืองอุดรธานี", license_plate: "ผก-1234 อด", licenseplate: "ผก-1234 อด", modelyear: "2023", driver_name: "นายอุดร สายส่ง", drivername: "นายอุดร สายส่ง", office_name: "ปณ.เมืองอุดรธานี", officename: "ปณ.เมืองอุดรธานี", province_group: "อุดรธานี (อด)", provincegroup: "อุดรธานี (อด)", latitude: 17.4138, longitude: 102.7872, speed_kmh: 55, status: "MOVING", is_active: true, fuel_percent: 90, fuelpercent: 90, battery_voltage: 12.8, battery: 12.8 },
+            { id: "V119", vehicle_id: "V119", vehicle_name: "test 6 ล้อ", name: "test 6 ล้อ", license_plate: "Test-3030", licenseplate: "Test-3030", modelyear: "2024", driver_name: "ธนกฤต เทิงสูงเนิน", drivername: "ธนกฤต เทิงสูงเนิน", office_name: "ศูนย์ไปรษณีย์ขอนแก่น", officename: "ศูนย์ไปรษณีย์ขอนแก่น", province_group: "ศูนย์ขอนแก่น (ศป)", provincegroup: "ศูนย์ขอนแก่น (ศป)", latitude: 16.44418109, longitude: 102.79355781, speed_kmh: 0, status: "COMPLETED", is_active: true, fuel_percent: 100, fuelpercent: 100, battery_voltage: 12.5, battery: 12.5 }
         ];
 
         function clearSystemCache() {
@@ -1263,22 +1324,24 @@
         function renderVehicleCardHTML(v) {
             const st = getVehicleStatus(v);
             let statusColor = "bg-amber-500/20 text-amber-400 border-amber-500/30";
-            let statusLabel = v.status || "IDLE";
+            let statusLabel = "จอดพัก (IDLE)";
 
             if (st === "OFFLINE") {
                 statusColor = "bg-rose-950/80 text-rose-300 border-rose-700/80";
-                statusLabel = "OFFLINE (ขาดการเชื่อมต่อ)";
+                statusLabel = "จอดพัก (GPS ดับ / ออฟไลน์)";
             } else if (st === "PARKED") {
                 statusColor = "bg-sky-950/90 text-sky-300 border-sky-700/80";
-                statusLabel = "🏁 ถึงเป้าหมายแล้ว";
+                statusLabel = "🏁 ถึงที่หมายแล้ว";
             } else if (st === "MOVING") {
                 statusColor = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
-                statusLabel = "MOVING";
+                statusLabel = `วิ่งอยู่ ${v.speed_kmh || 0} km/h`;
             }
 
             const isSelected = selectedVehicleId === v.vehicle_id;
             const distanceKm = (vehicleDistancesKm[v.vehicle_id] || 0.0).toFixed(1);
             const placeName = vehicleLocationNames[v.vehicle_id] || `กำลังค้นหาสถานที่ (${(v.latitude || 0).toFixed(3)}, ${(v.longitude || 0).toFixed(3)})`;
+            const driverDisplay = getDisplayDriverName(v);
+            const hasActiveDriver = !driverDisplay.includes("ไม่มีคนใช้งาน");
 
             return `
                 <div class="p-3 rounded-xl border transition ${isSelected ? 'bg-sky-950/80 border-sky-500' : 'bg-slate-900 border-slate-700/80 hover:border-slate-600'}">
@@ -1295,7 +1358,10 @@
 
                     <div class="grid grid-cols-2 gap-2 mt-2 text-[11px] text-slate-300 bg-slate-800/50 p-2 rounded-lg cursor-pointer" onclick="selectVehicle('${v.vehicle_id}')">
                         <div><i class="fa-solid fa-gauge text-amber-400 mr-1"></i>ความเร็ว: <strong class="text-white">${v.speed_kmh || 0} km/h</strong></div>
-                        <div><i class="fa-solid fa-user-gear text-indigo-400 mr-1"></i>คนขับ: <span class="text-slate-200">${v.driver_name || '-'}</span></div>
+                        <div>
+                            <i class="fa-solid fa-user-gear ${hasActiveDriver ? 'text-indigo-400' : 'text-slate-500'} mr-1"></i>คนขับ: 
+                            <span class="${hasActiveDriver ? 'text-sky-300 font-medium' : 'text-slate-500 italic'}">${hasActiveDriver ? driverDisplay : 'ไม่มีผู้ใช้งาน'}</span>
+                        </div>
                         <div><i class="fa-solid fa-building text-emerald-400 mr-1"></i>ที่ทำการ: <span class="text-slate-200">${v.office_name || '-'}</span></div>
                         <div><i class="fa-solid fa-map-location-dot text-indigo-400 mr-1"></i>กลุ่ม ปจ.: <span class="text-slate-200">${v.province_group || '-'}</span></div>
                         <div class="col-span-2 text-sky-400 font-medium pt-0.5 border-t border-slate-700/50">
@@ -1435,21 +1501,26 @@
                 });
 
                 const placeName = vehicleLocationNames[v.vehicle_id] || `${v.latitude.toFixed(4)}, ${v.longitude.toFixed(4)}`;
+                const driverDisplay = getDisplayDriverName(v);
+                const hasActiveDriver = !driverDisplay.includes("ไม่มีคนใช้งาน");
+
+                const popupContent = `
+                    <div class="text-slate-900 font-sans p-1">
+                        <strong class="text-sm text-sky-600 font-bold">${v.vehicle_name || v.vehicle_id}</strong><br>
+                        <span class="text-xs text-slate-600">ทะเบียน: ${v.license_plate || '-'}</span><br>
+                        <span class="text-xs font-semibold text-emerald-600">ความเร็ว: ${v.speed_kmh || 0} km/h</span><br>
+                        <span class="text-[11px] ${hasActiveDriver ? 'text-indigo-700 font-semibold' : 'text-slate-500'}">ผู้ขับขี่: ${hasActiveDriver ? driverDisplay : 'ไม่มีผู้ใช้งาน'}</span><br>
+                        <span class="text-[11px] text-slate-600">สถานที่: ${placeName}</span>
+                    </div>
+                `;
 
                 if (vehicleMarkers[v.vehicle_id]) {
                     vehicleMarkers[v.vehicle_id].setLatLng([v.latitude, v.longitude]);
                     vehicleMarkers[v.vehicle_id].setIcon(customIcon);
+                    vehicleMarkers[v.vehicle_id].setPopupContent(popupContent);
                 } else {
                     const marker = L.marker([v.latitude, v.longitude], { icon: customIcon }).addTo(map);
-                    marker.bindPopup(`
-                        <div class="text-slate-900 font-sans p-1">
-                            <strong class="text-sm text-sky-600 font-bold">${v.vehicle_name || v.vehicle_id}</strong><br>
-                            <span class="text-xs text-slate-600">ทะเบียน: ${v.license_plate || '-'}</span><br>
-                            <span class="text-xs font-semibold text-emerald-600">ความเร็ว: ${v.speed_kmh || 0} km/h</span><br>
-                            <span class="text-[11px] text-slate-500">คนขับ: ${v.driver_name || '-'}</span><br>
-                            <span class="text-[11px] text-indigo-600">สถานที่: ${placeName}</span>
-                        </div>
-                    `);
+                    marker.bindPopup(popupContent);
                     marker.on('click', () => {
                         selectVehicle(v.vehicle_id);
                     });
@@ -1815,7 +1886,17 @@
                     }
                 }
 
-                // Group points by vehicle_id
+                // Fetch vehicle usage logs to know exact users who operated the vehicle
+                let usageLogs = [];
+                try {
+                    const uRes = await fetch(`${cleanedUrl}/rest/v1/vehicle_usage_logs?created_at=gte.${startIso}&created_at=lte.${endIso}&order=created_at.asc&limit=2000`, { headers });
+                    if (uRes.ok) {
+                        const uData = await uRes.json();
+                        if (Array.isArray(uData)) usageLogs = uData;
+                    }
+                } catch(e) {}
+
+                // Group points and logs by vehicle_id
                 const grouped = {};
                 historyRecords.forEach(rec => {
                     const vid = rec.vehicle_id;
@@ -1823,16 +1904,32 @@
                     grouped[vid].push(rec);
                 });
 
+                const logsByVehicle = {};
+                usageLogs.forEach(log => {
+                    const vid = log.vehicle_id;
+                    if (!logsByVehicle[vid]) logsByVehicle[vid] = [];
+                    logsByVehicle[vid].push(log);
+                });
+
                 // Match with vehiclesData metadata
                 dailyReportRawData = vehiclesData.map(v => {
                     const points = grouped[v.vehicle_id] || [];
+                    const logs = logsByVehicle[v.vehicle_id] || [];
                     const distanceKm = calculateTodayDistanceKm(points);
                     const maxSpeed = points.length > 0 ? Math.max(...points.map(p => p.speed_kmh || 0)) : 0;
+                    
+                    // Determine users who operated this vehicle during this period
+                    const uniqueDrivers = Array.from(new Set(
+                        [...logs.map(l => l.driver_name), ...points.map(p => p.driver_name), v.driver_name]
+                        .filter(d => d && d !== '-' && d !== 'ไม่มีผู้ขับ')
+                    ));
+                    const recordedDriverName = uniqueDrivers.length > 0 ? uniqueDrivers.join(', ') : (v.driver_name || '-');
+
                     return {
                         vehicle_id: v.vehicle_id,
                         vehicle_name: v.vehicle_name || v.vehicle_id,
                         license_plate: v.license_plate || '-',
-                        driver_name: v.driver_name || '-',
+                        driver_name: recordedDriverName,
                         office_name: v.office_name || '-',
                         province_group: v.province_group || '-',
                         points_count: points.length,
@@ -2201,11 +2298,34 @@
             }
         }
 
+        let supabaseUsers = [];
+
+        async function fetchSupabaseUsers() {
+            try {
+                const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
+                const res = await fetch(`${cleanedUrl}/rest/v1/users?select=*`, {
+                    headers: {
+                        'apikey': supabaseKey,
+                        'Authorization': `Bearer ${supabaseKey}`
+                    }
+                });
+                if (res.ok) {
+                    supabaseUsers = await res.json();
+                    renderLoginAccountsTable();
+                    renderUserMgmtTable();
+                }
+            } catch (e) {
+                console.warn("Failed to fetch users from Supabase:", e);
+            }
+        }
+
         function openLoginModal() {
             const errBox = document.getElementById("loginErrorMsg");
             if (errBox) errBox.classList.add("hidden");
             const modal = document.getElementById("loginModal");
             if (modal) modal.classList.remove("hidden");
+            fetchSupabaseUsers();
+            renderLoginAccountsTable();
         }
 
         function closeLoginModal() {
@@ -2222,60 +2342,90 @@
             if (errBox) errBox.classList.add("hidden");
         }
 
-        const AUTHORIZED_CREDENTIALS = {
-            "admin": { pass: "admin123", role: "admin", name: "Super Admin", province: "ALL", code: "ALL" },
-            "40000": { pass: "pass40000", role: "manager", name: "User Manager (ขอนแก่น)", province: "ขอนแก่น", code: "40000" },
-            "41000": { pass: "pass41000", role: "manager", name: "User Manager (อุดรธานี)", province: "อุดรธานี", code: "41000" },
-            "43000": { pass: "pass43000", role: "manager", name: "User Manager (หนองคาย)", province: "หนองคาย", code: "43000" },
-            "47000": { pass: "pass47000", role: "manager", name: "User Manager (สกลนคร)", province: "สกลนคร", code: "47000" },
-            "34000": { pass: "pass34000", role: "manager", name: "User Manager (อุบลราชธานี)", province: "อุบลราชธานี", code: "34000" },
-            "30000": { pass: "pass30000", role: "manager", name: "User Manager (นครราชสีมา)", province: "นครราชสีมา", code: "30000" }
-        };
-
-        function getUserCustomAccounts() {
-            try {
-                const stored = localStorage.getItem("fleet_custom_user_accounts");
-                return stored ? JSON.parse(stored) : {};
-            } catch (e) {
-                return {};
-            }
-        }
-
-        function saveUserCustomAccounts(accs) {
-            try {
-                localStorage.setItem("fleet_custom_user_accounts", JSON.stringify(accs));
-            } catch (e) {
-                console.error("Failed to save custom user accounts:", e);
-            }
-        }
+        // --- Supabase Users & Authentication (Strictly Supabase Only) ---
+        const SUPABASE_BASE_USERS = [
+            { id: "U001", pincode: "1234", name: "นายสมชาย ผู้ขับขี่", role: "DRIVER", officename: "ปณ.เมืองขอนแก่น", provincegroup: "ขอนแก่น (ขก)", password: "123456", username: "" },
+            { id: "U002", pincode: "1234", name: "นางสาววิภา หัวหน้าศูนย์", role: "MANAGER", officename: "ปณ.เมืองขอนแก่น", provincegroup: "ขอนแก่น (ขก)", password: "123456", username: "" },
+            { id: "U003", pincode: "1234", name: "ผู้ดูแลระบบ ขอนแก่น", role: "ADMIN", officename: "ศูนย์ไปรษณีย์ขอนแก่น", provincegroup: "ศูนย์ขอนแก่น (ศป)", password: "123456", username: "admin" },
+            { id: "U004", pincode: "1234", name: "นายอุดร สายส่ง", role: "DRIVER", officename: "ปณ.เมืองอุดรธานี", provincegroup: "อุดรธานี (อด)", password: "123456", username: "" },
+            { id: "U005", pincode: "1234", name: "ธนกฤต เทิงสูงเนิน", role: "DRIVER", officename: "ศูนย์ไปรษณีย์ขอนแก่น", provincegroup: "ศูนย์ขอนแก่น (ศป)", password: "123456", username: "thanakit" },
+            { id: "U007", pincode: "1234", name: "อามเอง", role: "DRIVER", officename: "ปณ.ขอนแก่น", provincegroup: "ขอนแก่น (ขก)", password: "123456", username: "arm.th" }
+        ];
 
         function getMergedCredentials() {
-            const customAccs = getUserCustomAccounts();
-            return { ...AUTHORIZED_CREDENTIALS, ...customAccs };
+            const merged = {};
+            const sourceList = (Array.isArray(supabaseUsers) && supabaseUsers.length > 0) ? supabaseUsers : SUPABASE_BASE_USERS;
+
+            sourceList.forEach(u => {
+                const rawUsername = (u.username && u.username.trim()) ? u.username.trim() : "";
+                const rawId = (u.id && u.id.trim()) ? u.id.trim() : "";
+                const primaryKey = (rawUsername || rawId).toLowerCase();
+                if (!primaryKey) return;
+
+                const roleStr = (u.role || 'DRIVER').toUpperCase();
+                let appRole = 'driver';
+                if (roleStr === 'ADMIN') appRole = 'admin';
+                else if (roleStr === 'MANAGER') appRole = 'manager';
+
+                const prov = u.provincegroup || u.province_group || 'ขอนแก่น (ขก)';
+                const pass = u.password || u.pincode || '123456';
+
+                const userObj = {
+                    pass: pass,
+                    role: appRole,
+                    name: u.name || primaryKey,
+                    province: prov,
+                    code: u.postal_code || u.postalcode || primaryKey,
+                    userId: u.id,
+                    username: rawUsername || rawId,
+                    isSupabase: true
+                };
+
+                merged[primaryKey] = userObj;
+
+                // Also allow lookup by ID if username is different
+                if (rawId && rawId.toLowerCase() !== primaryKey) {
+                    merged[rawId.toLowerCase()] = userObj;
+                }
+
+                // If user is Admin, also allow lookup by 'admin'
+                if (roleStr === 'ADMIN') {
+                    merged['admin'] = userObj;
+                }
+            });
+
+            return merged;
         }
 
         function renderLoginAccountsTable() {
             const tbody = document.getElementById("loginAccountsTbody");
             if (!tbody) return;
-            const creds = getMergedCredentials();
+            const sourceList = (Array.isArray(supabaseUsers) && supabaseUsers.length > 0) ? supabaseUsers : SUPABASE_BASE_USERS;
             let html = '';
             
-            Object.keys(creds).forEach(username => {
-                const item = creds[username];
-                const isAdmin = item.role === 'admin';
-                const roleBadgeClass = isAdmin ? 'font-bold text-purple-300' : 'text-emerald-300 font-semibold';
-                const roleIcon = isAdmin ? '👑' : '🏢';
+            sourceList.forEach(u => {
+                const roleStr = (u.role || 'DRIVER').toUpperCase();
+                const isAdmin = roleStr === 'ADMIN';
+                const isManager = roleStr === 'MANAGER';
+                const roleBadgeClass = isAdmin ? 'font-bold text-purple-300' : (isManager ? 'text-amber-300 font-semibold' : 'text-sky-300 font-semibold');
+                const roleIcon = isAdmin ? '👑' : (isManager ? '🏢' : '👤');
                 const btnBg = isAdmin 
                     ? 'bg-purple-900/80 hover:bg-purple-800 text-purple-200 border-purple-500/30' 
-                    : 'bg-emerald-900/80 hover:bg-emerald-800 text-emerald-200 border-emerald-500/30';
+                    : (isManager ? 'bg-amber-900/80 hover:bg-amber-800 text-amber-200 border-amber-500/30' : 'bg-emerald-900/80 hover:bg-emerald-800 text-emerald-200 border-emerald-500/30');
+
+                const displayUsername = (u.username && u.username.trim()) ? u.username.trim() : u.id;
+                const pass = u.password || u.pincode || '123456';
 
                 html += `
                     <tr class="hover:bg-slate-800/40">
-                        <td class="p-1.5 ${roleBadgeClass}">${roleIcon} ${item.name}</td>
-                        <td class="p-1.5 font-mono text-white">${username}</td>
-                        <td class="p-1.5 font-mono text-emerald-400 font-bold">${item.pass}</td>
+                        <td class="p-1.5 ${roleBadgeClass}">
+                            ${roleIcon} ${u.name}
+                            <span class="ml-1 text-[9px] bg-emerald-950 text-emerald-300 px-1 py-0.2 rounded border border-emerald-500/40">ID: ${u.id}</span>
+                        </td>
+                        <td class="p-1.5 font-mono text-white font-semibold">${displayUsername}</td>
+                        <td class="p-1.5 font-mono text-emerald-400 font-bold">${pass}</td>
                         <td class="p-1.5 text-center">
-                            <button type="button" onclick="fillLoginForm('${username}', '${item.pass}')" class="text-[10px] ${btnBg} px-2 py-0.5 rounded border">ใส่ข้อมูล</button>
+                            <button type="button" onclick="fillLoginForm('${displayUsername}', '${pass}')" class="text-[10px] ${btnBg} px-2 py-0.5 rounded border">ใส่ข้อมูล</button>
                         </td>
                     </tr>
                 `;
@@ -2289,6 +2439,7 @@
                 alert("เฉพาะ Super Admin เท่านั้นที่สามารถจัดการบัญชีผู้ใช้งานได้");
                 return;
             }
+            fetchSupabaseUsers();
             resetMgmtForm();
             renderUserMgmtTable();
             const modal = document.getElementById("userMgmtModal");
@@ -2308,13 +2459,13 @@
             const title = document.getElementById("userFormTitle");
 
             if (uInput) { uInput.value = ""; uInput.readOnly = false; }
-            if (pInput) pInput.value = "";
+            if (pInput) pInput.value = "123456";
             if (nInput) nInput.value = "";
-            if (provInput) provInput.value = "";
-            if (title) title.innerText = "เพิ่ม / แก้ไข บัญชีผู้ใช้งาน Manager";
+            if (provInput) provInput.value = "ขอนแก่น (ขก)";
+            if (title) title.innerText = "เพิ่ม / แก้ไข บัญชีผู้ใช้งานใน Supabase";
         }
 
-        function saveUserAccountForm(e) {
+        async function saveUserAccountForm(e) {
             if (e) e.preventDefault();
             const uInput = document.getElementById("mgmtUsername");
             const pInput = document.getElementById("mgmtPassword");
@@ -2324,7 +2475,7 @@
             if (!uInput || !pInput || !nInput || !provInput) return;
 
             const username = uInput.value.trim().toLowerCase();
-            const password = pInput.value.trim();
+            const password = pInput.value.trim() || "123456";
             const name = nInput.value.trim();
             const province = provInput.value.trim();
 
@@ -2333,26 +2484,59 @@
                 return;
             }
 
-            const customAccs = getUserCustomAccounts();
-            
-            customAccs[username] = {
-                pass: password,
-                role: (username === 'admin') ? 'admin' : 'manager',
+            // Check if user already exists in Supabase
+            const existingUser = supabaseUsers.find(u => 
+                (u.username && u.username.toLowerCase() === username) || 
+                (u.id && u.id.toLowerCase() === username)
+            );
+
+            const userId = existingUser ? existingUser.id : ("U" + Math.floor(100 + Math.random() * 900));
+            const userRole = (username === 'admin' || (existingUser && existingUser.role === 'ADMIN')) ? 'ADMIN' : 'MANAGER';
+
+            const userPayload = {
+                id: userId,
                 name: name,
-                province: province,
-                code: username
+                username: username,
+                role: userRole,
+                password: password,
+                pincode: password,
+                officename: `ปณ.${province.replace(/ \(.+\)/, '')}`,
+                provincegroup: province,
+                postal_code: "40000"
             };
 
-            saveUserCustomAccounts(customAccs);
-            alert(`✅ บันทึกบัญชีผู้ใช้ [${username}] (รหัสผ่าน: ${password}) เรียบร้อยแล้ว!`);
+            try {
+                const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
+                const res = await fetch(`${cleanedUrl}/rest/v1/users`, {
+                    method: 'POST',
+                    headers: {
+                        'apikey': supabaseKey,
+                        'Authorization': `Bearer ${supabaseKey}`,
+                        'Content-Type': 'application/json',
+                        'Prefer': 'resolution=merge-duplicates,return=representation'
+                    },
+                    body: JSON.stringify(userPayload)
+                });
+
+                if (res.ok) {
+                    alert(`✅ บันทึกบัญชีผู้ใช้ [${username}] (Ref ID: ${userId}, รหัสผ่าน: ${password}) ลงใน Supabase เรียบร้อยแล้ว!`);
+                } else {
+                    const errTxt = await res.text();
+                    console.warn("Supabase user save notice:", res.status, errTxt);
+                }
+            } catch (err) {
+                console.error("Supabase user save error:", err);
+            }
+
+            await fetchSupabaseUsers();
             resetMgmtForm();
             renderUserMgmtTable();
             renderLoginAccountsTable();
         }
 
-        function editUserAccountInForm(username) {
+        function editUserAccountInForm(userIdOrUsername) {
             const creds = getMergedCredentials();
-            const item = creds[username];
+            const item = creds[userIdOrUsername.toLowerCase()];
             if (!item) return;
 
             const uInput = document.getElementById("mgmtUsername");
@@ -2361,45 +2545,72 @@
             const provInput = document.getElementById("mgmtProvince");
             const title = document.getElementById("userFormTitle");
 
-            if (uInput) { uInput.value = username; uInput.readOnly = true; }
+            if (uInput) { uInput.value = item.username || item.userId; uInput.readOnly = true; }
             if (pInput) pInput.value = item.pass;
             if (nInput) nInput.value = item.name;
             if (provInput) provInput.value = item.province || item.code;
-            if (title) title.innerText = `แก้ไขบัญชีผู้ใช้: ${username}`;
+            if (title) title.innerText = `แก้ไขบัญชีผู้ใช้: ${item.username || item.userId} (ID: ${item.userId})`;
         }
 
-        function quickEditUserPassword(username) {
+        async function quickEditUserPassword(userIdOrUsername) {
             const creds = getMergedCredentials();
-            const item = creds[username];
+            const item = creds[userIdOrUsername.toLowerCase()];
             if (!item) return;
 
-            const newPass = prompt(`กรอกรหัสผ่านใหม่สำหรับผู้ใช้ [${username} - ${item.name}]:`, item.pass);
+            const newPass = prompt(`กรอกรหัสผ่านใหม่สำหรับผู้ใช้ [${item.name} (${item.username || item.userId})]:`, item.pass);
             if (!newPass || !newPass.trim()) return;
 
-            const customAccs = getUserCustomAccounts();
-            customAccs[username] = {
-                ...item,
-                pass: newPass.trim()
-            };
+            const targetPass = newPass.trim();
 
-            saveUserCustomAccounts(customAccs);
-            alert(`✅ เปลี่ยนรหัสผ่านสำหรับ [${username}] เป็น "${newPass.trim()}" เรียบร้อยแล้ว`);
+            if (item.userId) {
+                try {
+                    const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
+                    await fetch(`${cleanedUrl}/rest/v1/users?id=eq.${item.userId}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': supabaseKey,
+                            'Authorization': `Bearer ${supabaseKey}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            password: targetPass,
+                            pincode: targetPass
+                        })
+                    });
+                } catch (e) {
+                    console.error("Failed to patch password to Supabase:", e);
+                }
+            }
+
+            alert(`✅ เปลี่ยนรหัสผ่านสำหรับ [${item.name}] เป็น "${targetPass}" เรียบร้อยแล้ว`);
+            await fetchSupabaseUsers();
             renderUserMgmtTable();
             renderLoginAccountsTable();
         }
 
-        function deleteUserAccount(username) {
-            if (username === 'admin') {
+        async function deleteUserAccount(userId) {
+            if (userId === 'U003' || userId === 'admin') {
                 alert("ไม่สามารถลบบัญชี Super Admin ได้");
                 return;
             }
 
-            if (!confirm(`คุณต้องการลบบัญชีผู้ใช้งาน [${username}] หรือไม่?`)) return;
+            if (!confirm(`คุณต้องการลบบัญชีผู้ใช้งาน ID: [${userId}] ออกจาก Supabase หรือไม่?`)) return;
 
-            const customAccs = getUserCustomAccounts();
-            delete customAccs[username];
-            saveUserCustomAccounts(customAccs);
-            alert(`🗑️ ลบบัญชีผู้ใช้งาน [${username}] เรียบร้อยแล้ว`);
+            try {
+                const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
+                await fetch(`${cleanedUrl}/rest/v1/users?id=eq.${userId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'apikey': supabaseKey,
+                        'Authorization': `Bearer ${supabaseKey}`
+                    }
+                });
+            } catch (e) {
+                console.error("Failed to delete user from Supabase:", e);
+            }
+
+            alert(`🗑️ ลบบัญชีผู้ใช้งาน [${userId}] เรียบร้อยแล้ว`);
+            await fetchSupabaseUsers();
             renderUserMgmtTable();
             renderLoginAccountsTable();
         }
@@ -2408,33 +2619,38 @@
             const tbody = document.getElementById("userMgmtTbody");
             if (!tbody) return;
 
-            const creds = getMergedCredentials();
+            const sourceList = (Array.isArray(supabaseUsers) && supabaseUsers.length > 0) ? supabaseUsers : SUPABASE_BASE_USERS;
             let html = '';
 
-            Object.keys(creds).forEach(username => {
-                const item = creds[username];
-                const isBuiltinAdmin = username === 'admin';
-                const isCustom = !!getUserCustomAccounts()[username];
+            sourceList.forEach(u => {
+                const roleStr = (u.role || 'DRIVER').toUpperCase();
+                const isBuiltinAdmin = roleStr === 'ADMIN';
+                const displayUsername = (u.username && u.username.trim()) ? u.username.trim() : u.id;
+                const pass = u.password || u.pincode || '123456';
+                const prov = u.provincegroup || u.province_group || '-';
 
                 html += `
                     <tr class="hover:bg-slate-800/60 transition">
-                        <td class="p-2.5 font-mono text-white font-bold">${username}</td>
-                        <td class="p-2.5">
-                            <span class="${isBuiltinAdmin ? 'text-purple-300 font-bold' : 'text-slate-200'}">${item.name}</span>
-                            ${isCustom ? '<span class="ml-1 text-[9px] bg-sky-900/80 text-sky-300 px-1.5 py-0.2 rounded border border-sky-500/30">Custom</span>' : ''}
+                        <td class="p-2.5 font-mono text-white font-bold">
+                            ${displayUsername}
+                            <div class="text-[10px] text-slate-400 font-normal">ID: ${u.id}</div>
                         </td>
-                        <td class="p-2.5 text-slate-300">${item.province || '-'}</td>
-                        <td class="p-2.5 font-mono text-emerald-400 font-bold">${item.pass}</td>
+                        <td class="p-2.5">
+                            <span class="${isBuiltinAdmin ? 'text-purple-300 font-bold' : 'text-slate-200'}">${u.name}</span>
+                            <span class="ml-1 text-[9px] bg-emerald-900/80 text-emerald-300 px-1.5 py-0.2 rounded border border-emerald-500/30">Supabase</span>
+                        </td>
+                        <td class="p-2.5 text-slate-300">${prov}</td>
+                        <td class="p-2.5 font-mono text-emerald-400 font-bold">${pass}</td>
                         <td class="p-2.5 text-center">
                             <div class="flex items-center justify-center space-x-1">
-                                <button type="button" onclick="editUserAccountInForm('${username}')" title="แก้ไขข้อมูล" class="bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 px-2 py-1 rounded text-[11px] border border-indigo-500/30 transition">
+                                <button type="button" onclick="editUserAccountInForm('${displayUsername}')" title="แก้ไขข้อมูล" class="bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 px-2 py-1 rounded text-[11px] border border-indigo-500/30 transition">
                                     <i class="fa-solid fa-pen-to-square"></i> แก้ไข
                                 </button>
-                                <button type="button" onclick="quickEditUserPassword('${username}')" title="เปลี่ยนรหัสผ่าน" class="bg-amber-900/80 hover:bg-amber-800 text-amber-200 px-2 py-1 rounded text-[11px] border border-amber-500/30 transition">
+                                <button type="button" onclick="quickEditUserPassword('${displayUsername}')" title="เปลี่ยนรหัสผ่าน" class="bg-amber-900/80 hover:bg-amber-800 text-amber-200 px-2 py-1 rounded text-[11px] border border-amber-500/30 transition">
                                     <i class="fa-solid fa-key"></i> เปลี่ยนรหัส
                                 </button>
                                 ${!isBuiltinAdmin ? `
-                                    <button type="button" onclick="deleteUserAccount('${username}')" title="ลบบัญชี" class="bg-rose-900/80 hover:bg-rose-800 text-rose-200 px-2 py-1 rounded text-[11px] border border-rose-500/30 transition">
+                                    <button type="button" onclick="deleteUserAccount('${u.id}')" title="ลบบัญชี" class="bg-rose-900/80 hover:bg-rose-800 text-rose-200 px-2 py-1 rounded text-[11px] border border-rose-500/30 transition">
                                         <i class="fa-solid fa-trash"></i> ลบ
                                     </button>
                                 ` : ''}
@@ -2468,7 +2684,7 @@
                 return;
             }
 
-            // Check if credential exists in merged list
+            // Check if credential exists in Supabase users
             const creds = getMergedCredentials();
             const cred = creds[username];
 
@@ -2483,7 +2699,7 @@
 
                 // Password verified successfully!
                 saveUserSession({
-                    id: "u-" + username,
+                    id: cred.userId || ("u-" + username),
                     name: cred.name,
                     role: cred.role,
                     province_group: cred.province,
@@ -2495,45 +2711,10 @@
                 return;
             }
 
-            // Fallback for custom province username with pass verification
-            let provinceName = "";
-            let postalCode = username;
-
-            if (username.startsWith('40') || username.includes('ขอนแก่น')) {
-                provinceName = "ขอนแก่น"; postalCode = "40000";
-            } else if (username.startsWith('41') || username.includes('อุดร')) {
-                provinceName = "อุดรธานี"; postalCode = "41000";
-            } else if (username.startsWith('43') || username.includes('หนองคาย')) {
-                provinceName = "หนองคาย"; postalCode = "43000";
-            } else if (username.startsWith('47') || username.includes('สกลนคร')) {
-                provinceName = "สกลนคร"; postalCode = "47000";
-            } else if (username.startsWith('34') || username.includes('อุบล')) {
-                provinceName = "อุบลราชธานี"; postalCode = "34000";
-            } else if (username.startsWith('30') || username.includes('นครราชสีมา')) {
-                provinceName = "นครราชสีมา"; postalCode = "30000";
-            } else {
-                provinceName = username;
+            if (errBox && errTxt) {
+                errTxt.innerText = `ไม่พบบัญชีผู้ใช้ "${username}" ในระบบ Supabase กรุณาตรวจสอบชื่อผู้ใช้หรือ Reference ID อีกครั้ง`;
+                errBox.classList.remove("hidden");
             }
-
-            const expectedPass = "pass" + postalCode;
-            if (password !== expectedPass && password !== postalCode && password !== "1234") {
-                if (errBox && errTxt) {
-                    errTxt.innerText = `รหัสผ่านไม่ถูกต้อง! รหัสผ่านสำหรับผู้จัดการกลุ่ม ${provinceName} คือ pass${postalCode}`;
-                    errBox.classList.remove("hidden");
-                }
-                return;
-            }
-
-            saveUserSession({
-                id: "u-mgr-" + username,
-                name: `User Manager (${provinceName})`,
-                role: "manager",
-                province_group: provinceName,
-                postal_code: postalCode
-            });
-
-            alert(`✅ เข้าสู่ระบบสำเร็จ! ท่านเข้าใช้งานในฐานะ User Manager (${provinceName})`);
-            closeLoginModal();
         }
 
         function loginAsCustomManager() {
@@ -2910,8 +3091,10 @@
 
         // Initial Load & Auto Poll every 4 seconds
         loadStoredUser();
+        fetchSupabaseUsers();
         fetchVehiclesData();
         setInterval(fetchVehiclesData, 4000);
+        setInterval(fetchSupabaseUsers, 20000);
     </script>
 </body>
 </html>

@@ -314,10 +314,17 @@ object SupabaseSyncManager {
         vehicleId: String,
         licensePlate: String,
         driverName: String,
+        userId: String? = null,
         officeName: String = "",
         postalCode: String = "",
         provinceGroup: String = "",
         status: String = "IN_PROGRESS",
+        startLat: Double? = null,
+        startLng: Double? = null,
+        endLat: Double? = null,
+        endLng: Double? = null,
+        totalDistanceKm: Double? = null,
+        maxSpeedKmh: Int? = null,
         timestamp: String = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).format(Date())
     ) {
         val cleanedUrl = baseUrl.trim().removeSuffix("/").removeSuffix("/rest/v1")
@@ -336,12 +343,24 @@ object SupabaseSyncManager {
             val payloadObj = JSONObject().apply {
                 put("id", usageId)
                 put("vehicle_id", vehicleId)
+                if (!userId.isNullOrBlank()) {
+                    put("user_id", userId)
+                }
                 put("license_plate", licensePlate)
                 put("driver_name", driverName)
                 put("office_name", officeName)
                 put("postal_code", postalCode)
                 put("province_group", provinceGroup)
                 put("start_time", timestamp)
+                if (cleanStatus == "COMPLETED") {
+                    put("end_time", timestamp)
+                }
+                if (startLat != null) put("start_lat", startLat)
+                if (startLng != null) put("start_lng", startLng)
+                if (endLat != null) put("end_lat", endLat)
+                if (endLng != null) put("end_lng", endLng)
+                if (totalDistanceKm != null) put("total_distance_km", totalDistanceKm)
+                if (maxSpeedKmh != null) put("max_speed_kmh", maxSpeedKmh)
                 put("status", cleanStatus)
                 put("created_at", timestamp)
             }
@@ -540,15 +559,13 @@ object SupabaseSyncManager {
                 put("name", name)
                 put("username", username)
                 put("role", role)
-                put("email", email)
-                put("phone", phone)
                 put("password", password)
+                put("pincode", password) // schema-compatible fallback for not null
+                put("officename", officeName)
                 put("office_name", officeName)
-                put("postal_code", postalCode)
+                put("provincegroup", provinceGroup)
                 put("province_group", provinceGroup)
-                put("assigned_vehicle_id", assignedVehicleId)
-                put("status", status)
-                put("updated_at", SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).format(Date()))
+                put("postal_code", postalCode)
             }
 
             val mediaType = "application/json; charset=utf-8".toMediaType()
@@ -601,6 +618,109 @@ object SupabaseSyncManager {
 
             if (isSuccess) {
                 Result.success("อัปเดตผู้ใช้ใน Supabase สำเร็จ")
+            } else {
+                Result.failure(Exception("HTTP $lastCode: $lastResponseBody"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Send vehicle usage log (e.g. Rest Stop) to Supabase 'vehicle_usage_logs' table
+     * Matches exact schema:
+     * id, vehicle_id, user_id, license_plate, driver_name, office_name, postal_code,
+     * province_group, start_time, end_time, start_lat, start_lng, end_lat, end_lng,
+     * total_distance_km, max_speed_kmh, status, created_at
+     */
+    suspend fun sendVehicleUsageLogToSupabase(
+        baseUrl: String = DEFAULT_SUPABASE_URL,
+        anonKey: String = DEFAULT_ANON_KEY,
+        logId: String,
+        vehicleId: String,
+        userId: String = "",
+        licensePlate: String,
+        driverName: String,
+        officeName: String,
+        postalCode: String,
+        provinceGroup: String,
+        status: String = "Rest Stop",
+        latitude: Double,
+        longitude: Double,
+        durationMinutes: Long,
+        parkStartTimeMs: Long,
+        parkEndTimeMs: Long
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val cleanedUrl = baseUrl.trim().removeSuffix("/").removeSuffix("/rest/v1")
+        val startIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).format(Date(parkStartTimeMs))
+        val endIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).format(Date(parkEndTimeMs))
+
+        try {
+            val payloadObj = JSONObject().apply {
+                put("id", logId)
+                put("vehicle_id", vehicleId)
+                if (userId.isNotBlank()) put("user_id", userId)
+                put("license_plate", licensePlate)
+                put("driver_name", driverName)
+                put("office_name", officeName)
+                put("postal_code", postalCode)
+                put("province_group", provinceGroup)
+                put("status", status)
+                put("start_time", startIso)
+                put("end_time", endIso)
+                // Specific coordinates for schema matching
+                put("start_lat", latitude)
+                put("start_lng", longitude)
+                put("end_lat", latitude)
+                put("end_lng", longitude)
+                put("total_distance_km", 0.0)
+                put("max_speed_kmh", 0)
+                put("created_at", endIso)
+                // Fallbacks if schema has latitude/longitude/duration_minutes
+                put("latitude", latitude)
+                put("longitude", longitude)
+                put("duration_minutes", durationMinutes)
+            }
+
+            val mediaType = "application/json; charset=utf-8".toMediaType()
+            val columnErrorRegex = "Could not find the '([^']+)' column".toRegex()
+            var isSuccess = false
+            var lastResponseBody = ""
+            var lastCode = 0
+
+            for (attempt in 0..5) {
+                val body = payloadObj.toString().toRequestBody(mediaType)
+                val request = Request.Builder()
+                    .url("$cleanedUrl/rest/v1/vehicle_usage_logs")
+                    .addHeader("apikey", anonKey)
+                    .addHeader("Authorization", "Bearer $anonKey")
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Prefer", "resolution=merge-duplicates,return=representation")
+                    .post(body)
+                    .build()
+
+                client.newCall(request).execute().use { response ->
+                    lastCode = response.code
+                    lastResponseBody = response.body?.string() ?: ""
+                    if (response.isSuccessful) {
+                        isSuccess = true
+                    }
+                }
+
+                if (isSuccess) break
+
+                val match = columnErrorRegex.find(lastResponseBody)
+                if (match != null) {
+                    val missingColumn = match.groupValues[1]
+                    Log.w("SupabaseSync", "Removing unsupported column '$missingColumn' from vehicle_usage_logs and retrying...")
+                    payloadObj.remove(missingColumn)
+                } else {
+                    break
+                }
+            }
+
+            if (isSuccess) {
+                Result.success("บันทึก Rest Stop ลง vehicle_usage_logs ใน Supabase สำเร็จ")
             } else {
                 Result.failure(Exception("HTTP $lastCode: $lastResponseBody"))
             }

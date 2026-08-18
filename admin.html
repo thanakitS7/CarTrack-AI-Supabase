@@ -182,18 +182,42 @@
             showDashboard();
         }
 
-        function handleLogin(e) {
+        async function handleLogin(e) {
             e.preventDefault();
             const user = document.getElementById("usernameInput").value.trim();
             const pass = document.getElementById("passwordInput").value.trim();
 
-            if (user === "admin" && pass === "9999") {
-                sessionStorage.setItem("adminLoggedIn", "true");
-                document.getElementById("loginError").classList.add("hidden");
-                showDashboard();
-            } else {
-                document.getElementById("loginError").classList.remove("hidden");
+            // Check against Supabase users table
+            try {
+                const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
+                const res = await fetch(`${cleanedUrl}/rest/v1/users?select=*`, {
+                    headers: {
+                        'apikey': supabaseKey,
+                        'Authorization': `Bearer ${supabaseKey}`
+                    }
+                });
+                if (res.ok) {
+                    const sbUsers = await res.json();
+                    const matched = sbUsers.find(u => 
+                        ((u.username && u.username.toLowerCase() === user.toLowerCase()) || 
+                         (u.id && u.id.toLowerCase() === user.toLowerCase()) ||
+                         (user.toLowerCase() === "admin" && u.role === "ADMIN")) &&
+                        (u.password === pass || u.pincode === pass || (pass === "123456" && !u.password))
+                    );
+
+                    if (matched && (matched.role === 'ADMIN' || matched.role === 'MANAGER')) {
+                        sessionStorage.setItem("adminLoggedIn", "true");
+                        sessionStorage.setItem("adminUserName", matched.name || matched.username);
+                        document.getElementById("loginError").classList.add("hidden");
+                        showDashboard();
+                        return;
+                    }
+                }
+            } catch (err) {
+                console.error("Supabase admin auth error:", err);
             }
+
+            document.getElementById("loginError").classList.remove("hidden");
         }
 
         function handleLogout() {

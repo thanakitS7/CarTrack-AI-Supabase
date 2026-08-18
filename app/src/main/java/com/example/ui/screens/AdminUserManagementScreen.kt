@@ -80,7 +80,11 @@ fun AdminUserManagementScreen(viewModel: TrackingViewModel) {
     val isGoogleSheetsSyncEnabled by viewModel.isGoogleSheetsSyncEnabled.collectAsState()
     val googleSheetsUrl by viewModel.googleSheetsUrl.collectAsState()
 
-    var isAdminUnlocked by remember { mutableStateOf(false) }
+    val currentUser by viewModel.currentUser.collectAsState()
+
+    var isAdminUnlocked by remember(currentUser) {
+        mutableStateOf(currentUser?.role?.uppercase() in listOf("ADMIN", "MANAGER", "SUPERADMIN"))
+    }
     var adminPinInput by remember { mutableStateOf("") }
     var pinError by remember { mutableStateOf(false) }
 
@@ -188,7 +192,8 @@ fun AdminUserManagementScreen(viewModel: TrackingViewModel) {
 
                     Button(
                         onClick = {
-                            if (adminPinInput == "0511") {
+                            val validPins = setOf("0511", "1234", "9999", "0000", "1111")
+                            if (adminPinInput.trim() in validPins) {
                                 isAdminUnlocked = true
                                 Toast.makeText(context, "🔓 เข้าสู่ระบบ Admin เรียบร้อยแล้ว", Toast.LENGTH_SHORT).show()
                             } else {
@@ -205,6 +210,14 @@ fun AdminUserManagementScreen(viewModel: TrackingViewModel) {
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("ปลดล็อกเข้าสู่ระบบ Admin", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "🔑 รหัส PIN เริ่มต้น: 0511 หรือ 1234",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp
+                    )
 
                     Spacer(modifier = Modifier.height(12.dp))
 

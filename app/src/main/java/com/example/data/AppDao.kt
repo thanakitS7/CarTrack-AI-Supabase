@@ -95,4 +95,20 @@ interface AppDao {
 
     @Query("DELETE FROM users WHERE id = :userId")
     suspend fun deleteUser(userId: String)
+
+    // Vehicle Usage Logs (e.g. Rest Stop, Parking over 30 mins)
+    @Query("SELECT * FROM vehicle_usage_logs ORDER BY createdAt DESC")
+    fun getAllUsageLogs(): Flow<List<VehicleUsageLogEntity>>
+
+    @Query("SELECT * FROM vehicle_usage_logs WHERE vehicleId = :vehicleId ORDER BY createdAt DESC")
+    fun getUsageLogsForVehicle(vehicleId: String): Flow<List<VehicleUsageLogEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertUsageLog(log: VehicleUsageLogEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertUsageLogs(logs: List<VehicleUsageLogEntity>)
+
+    @Query("DELETE FROM vehicle_usage_logs WHERE id = :logId")
+    suspend fun deleteUsageLog(logId: String)
 }

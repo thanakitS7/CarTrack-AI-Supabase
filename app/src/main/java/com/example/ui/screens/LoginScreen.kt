@@ -199,18 +199,6 @@ fun LoginScreen(
                 ) {
                     Text("สมัครสมาชิก", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
-
-                Button(
-                    onClick = { activeTab = "QUICK" },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (activeTab == "QUICK") Color(0xFF3B82F6) else Color.Transparent,
-                        contentColor = Color.White
-                    )
-                ) {
-                    Text("เลือกด่วน", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -231,7 +219,7 @@ fun LoginScreen(
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Text(
-                            text = "🔐 ลงชื่อเข้าใช้งานด้วยชื่อ หรือ เบอร์โทร",
+                            text = "🔐 เข้าสู่ระบบด้วยชื่อผู้ใช้ (Username) และ รหัสผ่าน (Password)",
                             color = Color.White,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
@@ -240,9 +228,9 @@ fun LoginScreen(
                         OutlinedTextField(
                             value = loginInput,
                             onValueChange = { loginInput = it },
-                            label = { Text("เบอร์โทรศัพท์ หรือ ชื่อผู้ใช้") },
+                            label = { Text("ชื่อผู้ใช้ (Username) หรือ รหัสผู้ใช้ (ID)") },
                             leadingIcon = {
-                                Icon(Icons.Default.Phone, contentDescription = null, tint = Color(0xFF94A3B8))
+                                Icon(Icons.Default.Person, contentDescription = null, tint = Color(0xFF94A3B8))
                             },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = Color.White,
@@ -280,7 +268,7 @@ fun LoginScreen(
                         )
 
                         Text(
-                            text = "💡 บัญชีทดสอบ: U001, U002, manager, admin (รหัสผ่าน: 1234)",
+                            text = "💡 ตัวอย่างบัญชี: thanakit, arm.th, U001, U002, admin (รหัสผ่าน: 123456)",
                             color = Color(0xFF38BDF8),
                             fontSize = 11.sp
                         )
@@ -289,7 +277,7 @@ fun LoginScreen(
                             onClick = {
                                 val input = loginInput.trim()
                                 if (input.isBlank()) {
-                                    Toast.makeText(context, "กรุณากรอกเบอร์โทรศัพท์ หรือ ชื่อผู้ใช้ (เช่น U001)", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "กรุณากรอกชื่อผู้ใช้ (Username) หรือ รหัสอ้างอิง (ID)", Toast.LENGTH_SHORT).show()
                                     return@Button
                                 }
 
@@ -309,14 +297,14 @@ fun LoginScreen(
                                             (matchedUser.password == "123456" && (loginPassword.trim() == "1234" || loginPassword.trim() == "123456"))
 
                                     if (!isPassValid) {
-                                        Toast.makeText(context, "❌ รหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง (ลอง 1234)", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "❌ รหัสผ่านไม่ถูกต้อง กรุณาตรวจสอบรหัสผ่านอีกครั้ง", Toast.LENGTH_SHORT).show()
                                     } else {
                                         viewModel.loginUser(matchedUser)
                                         onLoginSuccess(matchedUser)
                                         Toast.makeText(context, "เข้าสู่ระบบสำเร็จ! ยินดีต้อนรับ ${matchedUser.name}", Toast.LENGTH_SHORT).show()
                                     }
                                 } else {
-                                    Toast.makeText(context, "❌ ไม่พบผู้ใช้งาน '$input' (ลองใช้ U001, U002 หรือแถบ 'เลือกด่วน')", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, "❌ ไม่พบผู้ใช้งาน '$input' กรุณาตรวจสอบ Username หรือรหัสผู้ใช้", Toast.LENGTH_LONG).show()
                                 }
                             },
                             modifier = Modifier
@@ -584,115 +572,6 @@ fun LoginScreen(
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
                         ) {
                             Text("สมัครสมาชิก & เข้าสู่ระบบ", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-
-            // 3. QUICK SELECT TAB
-            if (activeTab == "QUICK") {
-                Text(
-                    text = "⚡ เลือกเปลี่ยนบัญชีผู้ใช้ทดสอบด่วน:",
-                    color = Color(0xFF38BDF8),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    allUsers.forEach { user ->
-                        val roleColor = when (user.role.uppercase()) {
-                            "MANAGER" -> Color(0xFFF59E0B)
-                            "ADMIN" -> Color(0xFFA855F7)
-                            "DISPATCHER" -> Color(0xFF06B6D4)
-                            else -> Color(0xFF3B82F6)
-                        }
-
-                        Card(
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFF182232)),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(1.dp, roleColor.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
-                                .clickable {
-                                    viewModel.loginUser(user)
-                                    onLoginSuccess(user)
-                                    Toast.makeText(context, "ยินดีต้อนรับ ${user.name} (${user.role})", Toast.LENGTH_SHORT).show()
-                                }
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = roleColor.copy(alpha = 0.2f),
-                                    modifier = Modifier.size(44.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = when (user.role.uppercase()) {
-                                                "ADMIN" -> Icons.Default.AdminPanelSettings
-                                                "MANAGER" -> Icons.Default.Shield
-                                                else -> Icons.Default.Person
-                                            },
-                                            contentDescription = null,
-                                            tint = roleColor,
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.width(12.dp))
-
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = user.name,
-                                            color = Color.White,
-                                            fontSize = 15.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Surface(
-                                            shape = RoundedCornerShape(6.dp),
-                                            color = roleColor.copy(alpha = 0.25f)
-                                        ) {
-                                            Text(
-                                                text = user.role,
-                                                color = roleColor,
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                            )
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = "📍 กลุ่มจังหวัด: ${user.provinceGroup}",
-                                        color = Color(0xFF38BDF8),
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Text(
-                                        text = "🔑 Pass: ${if (user.password.isNotBlank()) user.password else "123456"} • 🏢 ${user.officeName}",
-                                        color = Color.LightGray,
-                                        fontSize = 11.sp
-                                    )
-                                }
-
-                                Text(
-                                    text = "เข้าใช้งาน ➔",
-                                    color = roleColor,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
                         }
                     }
                 }

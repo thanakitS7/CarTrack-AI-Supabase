@@ -33,12 +33,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
@@ -79,6 +82,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Sync
@@ -160,6 +164,7 @@ fun LiveTrackingScreen(
     val tripDistanceMeters by viewModel.tripDistanceMeters.collectAsState()
     val speedLimitKmh by viewModel.speedLimitKmh.collectAsState()
     val isOverspeeding by viewModel.isOverspeeding.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
 
     var showAddVehicleDialog by remember { mutableStateOf(false) }
     var showSensorInfoDialog by remember { mutableStateOf(false) }
@@ -279,7 +284,7 @@ fun LiveTrackingScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 64.dp)
+                .padding(top = 8.dp)
                 .animateContentSize()
         ) {
             // Prominent Overspeed Warning Banner (Centered Underneath Bell Icon)
@@ -374,55 +379,6 @@ fun LiveTrackingScreen(
                     }
                 }
             }
-            // Unblocked Floating Google Maps Location Search Bar
-            Surface(
-                onClick = { showLocationSearchDialog = true },
-                shape = RoundedCornerShape(24.dp),
-                color = Color(0xF21E293B),
-                border = BorderStroke(1.dp, Color(0xFF334155)),
-                shadowElevation = 6.dp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Search Google Maps",
-                            tint = Color(0xFFEF4444),
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "🔍 ค้นหาใน Google Maps (สถานที่/จุดหมาย)",
-                            color = Color.LightGray,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1
-                        )
-                    }
-                    Surface(
-                        shape = CircleShape,
-                        color = Color(0xFFEF4444).copy(alpha = 0.2f)
-                    ) {
-                        Text(
-                            text = "GPS 🟢",
-                            color = Color(0xFFEF4444),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                        )
-                    }
-                }
-            }
         }
 
         // Bottom Dashboard Card Overlay
@@ -435,6 +391,7 @@ fun LiveTrackingScreen(
                 VehicleTelemetryCard(
                     vehicle = currentVehicle,
                     vehicles = vehicles,
+                    currentUser = currentUser,
                     isTripActive = isTripActive,
                     isTripPaused = isTripPaused,
                     tripDistanceMeters = tripDistanceMeters,
@@ -785,6 +742,7 @@ fun OutofRouteAlertBanner(
 fun VehicleTelemetryCard(
     vehicle: VehicleEntity,
     vehicles: List<VehicleEntity> = emptyList(),
+    currentUser: com.example.data.UserEntity? = null,
     isTripActive: Boolean,
     isTripPaused: Boolean,
     tripDistanceMeters: Double,
@@ -815,17 +773,17 @@ fun VehicleTelemetryCard(
     }
 
     Card(
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xF21E293B)),
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xF50F172A)),
+        border = BorderStroke(1.dp, Color(0xFF334155).copy(alpha = 0.6f)),
         modifier = Modifier
             .fillMaxWidth()
             .animateContentSize()
-            .padding(top = 4.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp)
+                .padding(horizontal = 14.dp, vertical = 6.dp)
         ) {
             // Drag Handle Header (swipe or tap to toggle expand/collapse)
             Row(
@@ -840,318 +798,267 @@ fun VehicleTelemetryCard(
                         }
                     }
                     .clickable { isExpanded = !isExpanded }
-                    .padding(vertical = 4.dp)
+                    .padding(vertical = 2.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .width(36.dp)
-                            .height(4.dp)
-                            .background(Color.Gray.copy(alpha = 0.6f), CircleShape)
+                            .width(32.dp)
+                            .height(3.dp)
+                            .background(Color.Gray.copy(alpha = 0.5f), CircleShape)
                     )
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (isExpanded) "ข้อมูลรถและตำแหน่ง GPS (ปัดลง/แตะเพื่อย่อ)" else "ข้อมูลรถและตำแหน่ง GPS (ปัดขึ้น/แตะเพื่อขยาย)",
-                        color = Color.Gray,
-                        fontSize = 11.sp,
+                        text = if (isExpanded) "ข้อมูลรถและพิกัด GPS (แตะเพื่อย่อ)" else "ข้อมูลรถและพิกัด GPS (แตะเพื่อขยาย)",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Medium
                     )
                 }
 
                 IconButton(
                     onClick = { isExpanded = !isExpanded },
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(20.dp)
                 ) {
                     Icon(
                         imageVector = if (isExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
                         contentDescription = "Toggle Panel",
-                        tint = CyberCyanPrimary
+                        tint = CyberCyanPrimary,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
 
             if (isExpanded) {
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // Bottom Vehicle Switcher Chips & Add Vehicle Button
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 8.dp)
+                        .heightIn(max = 480.dp)
+                        .verticalScroll(rememberScrollState())
                 ) {
-                    items(vehicles) { v ->
-                        val isSelected = (v.id == vehicle.id)
-                        Surface(
-                            onClick = { onSelectVehicle(v.id) },
-                            shape = RoundedCornerShape(20.dp),
-                            color = if (isSelected) CyberCyanPrimary else Color(0xFF334155),
-                            contentColor = if (isSelected) Color.Black else Color.White
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Text(
-                                    text = "🚘 ${v.name} (${v.licensePlate})",
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium
-                                )
-                            }
-                        }
-                    }
+                    // Compact Vehicle & Driver Info Header (Single Slim Row)
+                    val displayedDriverName = currentUser?.name?.takeIf { it.isNotBlank() }
+                        ?: currentUser?.username?.takeIf { it.isNotBlank() }
+                        ?: vehicle.driverName.takeIf { it.isNotBlank() }
+                        ?: "ยังไม่มีผู้ใช้งาน"
 
-                    item {
-                        Surface(
-                            onClick = onAddVehicle,
-                            shape = RoundedCornerShape(20.dp),
-                            color = Color(0xFF6750A4),
-                            contentColor = Color.White
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = "Add Vehicle", tint = Color.White, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("+ เพิ่มรถ/ใส่ทะเบียน", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-
-                // Vehicle Header Status Row
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column {
-                        Text(
-                            text = vehicle.name,
-                            color = Color.White,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "ทะเบียน: ${vehicle.licensePlate} • ${vehicle.modelYear}",
-                            color = Color.LightGray,
-                            fontSize = 12.sp
-                        )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp, bottom = 4.dp)
+                    ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(top = 2.dp)
+                            modifier = Modifier.weight(1f, fill = false)
                         ) {
                             Text(
-                                text = "👤 ผู้ใช้รถ/คนขับ: ${vehicle.driverName}",
-                                color = Color(0xFF38BDF8),
+                                text = "🚘 ${vehicle.name} (${vehicle.licensePlate})",
+                                color = Color.White,
                                 fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = Color(0xFF334155),
-                                onClick = {
-                                    Toast.makeText(context, "🔒 สำหรับ Admin เท่านั้น! กรุณาไปที่เมนู 'จัดการข้อมูล' เพื่อแก้ไขข้อมูลผู้ใช้รถและทะเบียนรถ", Toast.LENGTH_LONG).show()
-                                }
+                            Text(
+                                text = "👤 $displayedDriverName",
+                                color = Color(0xFF38BDF8),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(6.dp))
+                        StatusChip(status = vehicle.effectiveStatus, isLocked = vehicle.isEngineLocked, isOffline = vehicle.isGpsOffline)
+                    }
+
+                    // Row 3: Driver Trip Control Buttons (เริ่มเดินทาง / พักรถ / ถึงเป้าหมาย)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp)
+                    ) {
+                        if (!isTripActive) {
+                            Button(
+                                onClick = onStartTrip,
+                                colors = ButtonDefaults.buttonColors(containerColor = EmeraldSafe, contentColor = Color.Black),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(36.dp)
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Lock,
-                                        contentDescription = "Admin Managed",
-                                        tint = Color.LightGray,
-                                        modifier = Modifier.size(10.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(2.dp))
-                                    Text("Admin Only", fontSize = 9.sp, color = Color.LightGray)
-                                }
+                                Icon(Icons.Default.PlayArrow, contentDescription = "Start Trip", modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("🚀 เริ่มเดินทาง", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        } else {
+                            Button(
+                                onClick = onPauseTrip,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isTripPaused) AmberWarning else Color(0xFF334155),
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isTripPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                                    contentDescription = "Pause/Resume",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = if (isTripPaused) "▶️ เดินทางต่อ" else "⏸️ พักรถ",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+
+                            Button(
+                                onClick = onEndTrip,
+                                colors = ButtonDefaults.buttonColors(containerColor = CrimsonAlert, contentColor = Color.White),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(36.dp)
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = "Arrived", modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("🏁 ถึงเป้าหมาย", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
                         }
                     }
 
-                    StatusChip(status = vehicle.effectiveStatus, isLocked = vehicle.isEngineLocked, isOffline = vehicle.isGpsOffline)
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Driver Trip Control Buttons (เริ่มเดินทาง / พักรถ / ถึงเป้าหมาย)
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 2.dp)
-                ) {
-                    if (!isTripActive) {
-                        Button(
-                            onClick = onStartTrip,
-                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldSafe, contentColor = Color.Black),
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(46.dp)
+                    // Row 4: Header for Telemetry with Info Explanation Button
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp, bottom = 2.dp)
+                    ) {
+                        Text(
+                            text = "📊 เกจวัดความเร็วและพิกัดสด",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        TextButton(
+                            onClick = onShowSensorInfo,
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                            modifier = Modifier.height(22.dp)
                         ) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = "Start Trip", modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("🚀 เริ่มเดินทาง", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Icon(Icons.Default.Info, contentDescription = "Sensor Info", tint = CyberCyanPrimary, modifier = Modifier.size(12.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("วิธีคำนวณ", color = CyberCyanPrimary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
-                    } else {
-                        Button(
-                            onClick = onPauseTrip,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isTripPaused) AmberWarning else Color(0xFF334155),
-                                contentColor = Color.White
-                            ),
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(46.dp)
+                    }
+
+                    // Row 5: Telemetry Gauges 2x2 Grid (Compact & Modern Card Design)
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            // Speed Meter Tile (Direct Phone GPS Speed)
+                            TelemetryTile(
+                                title = "ความเร็ว GPS",
+                                value = "${vehicle.speedKmh}",
+                                unit = "กม./ชม.",
+                                icon = Icons.Default.Speed,
+                                accentColor = if (vehicle.speedKmh > speedLimitKmh) CrimsonAlert else CyberCyanPrimary,
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            // Speed Limit Tile (Fixed 90 km/h)
+                            TelemetryTile(
+                                title = "จำกัดความเร็ว",
+                                value = "90",
+                                unit = "กม./ชม.",
+                                icon = Icons.Default.Warning,
+                                accentColor = CrimsonAlert,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            // Current Place Name / GPS Location Tile
+                            TelemetryTile(
+                                title = "สถานที่ปัจจุบัน",
+                                value = placeName,
+                                unit = String.format("GPS %.3f, %.3f", vehicle.currentLat, vehicle.currentLng),
+                                icon = Icons.Default.MyLocation,
+                                accentColor = EmeraldSafe,
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            // Trip Distance Tile (Start -> Goal)
+                            TelemetryTile(
+                                title = "ระยะทางเดินทาง",
+                                value = distValStr,
+                                unit = distUnitStr,
+                                icon = Icons.Default.AltRoute,
+                                accentColor = AmberWarning,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    // Row 6: Clean background sync indicator
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp, bottom = 2.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f, fill = false)
                         ) {
                             Icon(
-                                imageVector = if (isTripPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                                contentDescription = "Pause/Resume",
-                                modifier = Modifier.size(18.dp)
+                                imageVector = Icons.Default.CloudUpload,
+                                contentDescription = "Sync Status",
+                                tint = if (isTripActive) EmeraldSafe else Color.Gray,
+                                modifier = Modifier.size(12.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = if (isTripPaused) "▶️ เดินทางต่อ" else "⏸️ พักรถ",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
+                                text = if (isTripActive) "ซิงค์ Supabase: $lastSyncStatus" else "พร้อมซิงค์ Supabase สด",
+                                color = Color.Gray,
+                                fontSize = 9.sp,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
                         }
 
-                        Button(
-                            onClick = onEndTrip,
-                            colors = ButtonDefaults.buttonColors(containerColor = CrimsonAlert, contentColor = Color.White),
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(46.dp)
+                        IconButton(
+                            onClick = { showUrlEditDialog = true },
+                            modifier = Modifier.size(18.dp)
                         ) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = "Arrived", modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("🏁 ถึงเป้าหมาย", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Icon(
+                                imageVector = Icons.Default.Link,
+                                contentDescription = "Edit Webhook",
+                                tint = CyberCyanPrimary,
+                                modifier = Modifier.size(12.dp)
+                            )
                         }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Header for Telemetry with Info Explanation Button
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
-                ) {
-                    Text(
-                        text = "📊 สถานะพิกัดสดและเกจวัด",
-                        color = Color.LightGray,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    TextButton(
-                        onClick = onShowSensorInfo,
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
-                    ) {
-                        Icon(Icons.Default.Info, contentDescription = "Sensor Info", tint = CyberCyanPrimary, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("ℹ️ ความเร็ว/ระยะทาง วัดยังไง?", color = CyberCyanPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                // Telemetry Gauges 2x2 Grid
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        // Speed Meter Tile (Direct Phone GPS Speed)
-                        TelemetryTile(
-                            title = "ความเร็ว GPS",
-                            value = "${vehicle.speedKmh}",
-                            unit = "กม./ชม. สด",
-                            icon = Icons.Default.Speed,
-                            accentColor = if (vehicle.speedKmh > speedLimitKmh) CrimsonAlert else CyberCyanPrimary,
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        // Speed Limit Tile (Fixed 90 km/h)
-                        TelemetryTile(
-                            title = "จำกัดความเร็ว",
-                            value = "90",
-                            unit = "กม./ชม. (กำหนดไว้ 90)",
-                            icon = Icons.Default.Warning,
-                            accentColor = CrimsonAlert,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        // Current Place Name / GPS Location Tile
-                        TelemetryTile(
-                            title = "สถานที่ปัจจุบัน",
-                            value = placeName,
-                            unit = String.format("GPS %.3f, %.3f", vehicle.currentLat, vehicle.currentLng),
-                            icon = Icons.Default.MyLocation,
-                            accentColor = EmeraldSafe,
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        // Trip Distance Tile (Start -> Goal)
-                        TelemetryTile(
-                            title = "ระยะทางเดินทาง",
-                            value = distValStr,
-                            unit = distUnitStr,
-                            icon = Icons.Default.AltRoute,
-                            accentColor = AmberWarning,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Clean background sync indicator
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.CloudUpload,
-                            contentDescription = "Sync Status",
-                            tint = if (isTripActive) EmeraldSafe else Color.Gray,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (isTripActive) "ซิงค์ Supabase สด: $lastSyncStatus" else "พร้อมซิงค์ Supabase เมื่อเริ่มเดินทาง",
-                            color = Color.Gray,
-                            fontSize = 10.sp
-                        )
-                    }
-
-                    IconButton(
-                        onClick = { showUrlEditDialog = true },
-                        modifier = Modifier.size(20.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Link,
-                            contentDescription = "Edit Webhook",
-                            tint = CyberCyanPrimary,
-                            modifier = Modifier.size(14.dp)
-                        )
                     }
                 }
             } else {
@@ -1327,43 +1234,51 @@ fun TelemetryTile(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = Color(0xFF0F172A),
+        shape = RoundedCornerShape(12.dp),
+        color = Color(0xFF1E293B).copy(alpha = 0.9f),
+        border = BorderStroke(1.dp, Color(0xFF334155).copy(alpha = 0.5f)),
         modifier = modifier
     ) {
-        Column(modifier = Modifier.padding(10.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = icon,
                     contentDescription = title,
                     tint = accentColor,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(13.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = title,
-                    color = Color.Gray,
+                    color = Color(0xFF94A3B8),
                     fontSize = 10.sp,
                     maxLines = 1,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
             }
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = value,
-                color = Color.White,
-                fontSize = if (value.length > 10) 12.sp else 16.sp,
-                fontWeight = FontWeight.ExtraBold,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-            )
-            Text(
-                text = unit,
-                color = accentColor,
-                fontSize = 10.sp,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = value,
+                    color = Color.White,
+                    fontSize = if (value.length > 12) 11.sp else 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                Text(
+                    text = unit,
+                    color = accentColor,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
@@ -1371,24 +1286,24 @@ fun TelemetryTile(
 @Composable
 fun StatusChip(status: String, isLocked: Boolean, isOffline: Boolean = false) {
     val (label, bg, fg) = when {
-        isLocked -> Triple("ล็อคเครื่องยนต์", CrimsonAlert, Color.White)
-        isOffline || status == "OFFLINE" || status.startsWith("OFFLINE") -> Triple("OFFLINE (ขาดการเชื่อมต่อ)", Color.Gray, Color.White)
-        status == "ALERT_OUT_OF_ROUTE" -> Triple("ออกนอกเส้นทาง", CrimsonAlert, Color.White)
-        status == "PARKED" || status.contains("PARKED") || status.contains("ถึงเป้าหมาย") -> Triple("🏁 ถึงเป้าหมายแล้ว", Color(0xFF0284C7), Color.White)
-        status == "MOVING" || status.startsWith("MOVING") -> Triple("กำลังเคลื่อนที่", EmeraldSafe, Color.Black)
-        else -> Triple("จอดสแตนบาย", AmberWarning, Color.Black)
+        isLocked -> Triple("🔒 ล็อคเครื่องยนต์", CrimsonAlert, Color.White)
+        isOffline || status == "OFFLINE" || status.startsWith("OFFLINE") -> Triple("⚡ OFFLINE", Color(0xFF475569), Color.White)
+        status == "ALERT_OUT_OF_ROUTE" -> Triple("⚠️ ออกนอกเส้นทาง", CrimsonAlert, Color.White)
+        status == "PARKED" || status.contains("PARKED") || status.contains("ถึงเป้าหมาย") -> Triple("🏁 ถึงเป้าหมาย", Color(0xFF0284C7), Color.White)
+        status == "MOVING" || status.startsWith("MOVING") -> Triple("🟢 กำลังวิ่ง", EmeraldSafe, Color.Black)
+        else -> Triple("🟡 จอดพัก", AmberWarning, Color.Black)
     }
 
     Surface(
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(8.dp),
         color = bg
     ) {
         Text(
             text = label,
             color = fg,
-            fontSize = 11.sp,
+            fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
         )
     }
 }

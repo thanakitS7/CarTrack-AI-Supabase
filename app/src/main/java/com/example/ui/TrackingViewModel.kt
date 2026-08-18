@@ -169,6 +169,12 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
         initialValue = emptyList()
     )
 
+    val allVehicleUsageLogs = repository.allUsageLogs.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
     init {
         viewModelScope.launch {
             repository.initializeSampleDataIfNeeded()
@@ -218,6 +224,118 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
 
     private var lastSyncTimeMs = 0L
 
+    // Parking & Rest Stop Tracker: detect vehicle parked at same coordinates > 30 minutes
+    private var parkStartLat = 0.0
+    private var parkStartLng = 0.0
+    private var parkStartTimeMs = 0L
+    private var hasLoggedRestStop = false
+
+    private fun checkAndRecordRestStop(vehicle: VehicleEntity, speedKmh: Int, lat: Double, lng: Double) {
+        val isParked = (speedKmh <= 2)
+        val now = System.currentTimeMillis()
+
+        if (isParked) {
+            if (parkStartTimeMs == 0L) {
+                // Started parking
+                parkStartLat = lat
+                parkStartLng = lng
+                parkStartTimeMs = now
+                hasLoggedRestStop = false
+            } else {
+                // Check if vehicle is still within ~50 meters of the initial parked coordinate
+                val distFromStart = GeoUtils.distanceMeters(parkStartLat, parkStartLng, lat, lng)
+                if (distFromStart > 60.0) {
+                    // Vehicle moved away - reset parking counter
+                    parkStartLat = lat
+                    parkStartLng = lng
+                    parkStartTimeMs = now
+                    hasLoggedRestStop = false
+                } else {
+                    val parkedDurationMs = now - parkStartTimeMs
+                    val thirtyMinutesMs = 30 * 60 * 1000L // 30 minutes
+
+                    if (parkedDurationMs >= thirtyMinutesMs && !hasLoggedRestStop) {
+                        hasLoggedRestStop = true
+                        val durationMinutes = parkedDurationMs / (60 * 1000L)
+                        val loggedInUser = _currentUser.value
+                        val effectiveDriverName = loggedInUser?.name?.takeIf { it.isNotBlank() }
+                            ?: loggedInUser?.username?.takeIf { it.isNotBlank() }
+                            ?: vehicle.driverName
+                            ?: "ผู้ใช้งานระบบ"
+
+                        val placeName = GeoUtils.getFallbackThaiLandmark(lat, lng)
+
+                        viewModelScope.launch {
+                            val logEntity = com.example.data.VehicleUsageLogEntity(
+                                vehicleId = vehicle.id,
+                                licensePlate = vehicle.licensePlate,
+                                driverName = effectiveDriverName,
+                                officeName = loggedInUser?.officeName?.takeIf { it.isNotBlank() } ?: vehicle.officeName,
+                                postalCode = loggedInUser?.postalCode?.takeIf { it.isNotBlank() } ?: vehicle.postalCode,
+                                provinceGroup = loggedInUser?.provinceGroup?.takeIf { it.isNotBlank() } ?: vehicle.provinceGroup,
+                                status = "Rest Stop",
+                                latitude = lat,
+                                longitude = lng,
+                                landmarkName = placeName,
+                                durationMinutes = durationMinutes,
+                                parkStartTime = parkStartTimeMs,
+                                parkEndTime = now,
+                                createdAt = now,
+                                isSyncedToCloud = true
+                            )
+
+                            // 1. Insert into local SQLite Room database table 'vehicle_usage_logs'
+                            repository.addVehicleUsageLog(logEntity)
+
+                            // 2. Insert into Supabase table 'vehicle_usage_logs'
+                            if (_isSupabaseSyncEnabled.value) {
+                                com.example.util.SupabaseSyncManager.sendVehicleUsageLogToSupabase(
+                                    baseUrl = _supabaseUrl.value,
+                                    anonKey = _supabaseAnonKey.value,
+                                    logId = logEntity.id,
+                                    vehicleId = vehicle.id,
+                                    userId = loggedInUser?.id ?: "",
+                                    licensePlate = vehicle.licensePlate,
+                                    driverName = effectiveDriverName,
+                                    officeName = logEntity.officeName,
+                                    postalCode = logEntity.postalCode,
+                                    provinceGroup = logEntity.provinceGroup,
+                                    status = "Rest Stop",
+                                    latitude = lat,
+                                    longitude = lng,
+                                    durationMinutes = durationMinutes,
+                                    parkStartTimeMs = parkStartTimeMs,
+                                    parkEndTimeMs = now
+                                )
+                            }
+
+                            // 3. Add a security/activity notification alert
+                            val alert = com.example.data.AlertEntity(
+                                vehicleId = vehicle.id,
+                                vehicleName = vehicle.name,
+                                licensePlate = vehicle.licensePlate,
+                                alertType = "REST_STOP",
+                                severity = "INFO",
+                                title = "☕ บันทึกจุดพักรถ (Rest Stop) อัตโนมัติ",
+                                description = "รถจอดนิ่ง ณ พิกัด $placeName เป็นเวลานานกว่า 30 นาที (คนขับ: $effectiveDriverName)",
+                                latitude = lat,
+                                longitude = lng,
+                                distanceFromRouteMeters = 0,
+                                timestamp = now,
+                                isAcknowledged = false
+                            )
+                            repository.addAlert(alert)
+                        }
+                    }
+                }
+            }
+        } else {
+            // Vehicle is actively moving (speed > 2 km/h) - reset parking tracker
+            parkStartTimeMs = 0L
+            hasLoggedRestStop = false
+        }
+    }
+
     fun setSpeedLimitKmh(limit: Int) {
         _speedLimitKmh.value = 90
     }
@@ -230,6 +348,12 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
         val limit = _speedLimitKmh.value
         val isExceeded = speedKmh > limit
         _isOverspeeding.value = isExceeded
+
+        val loggedInUser = _currentUser.value
+        val effectiveDriverName = loggedInUser?.name?.takeIf { it.isNotBlank() }
+            ?: loggedInUser?.username?.takeIf { it.isNotBlank() }
+            ?: vehicle.driverName
+            ?: "ผู้ใช้งานระบบ"
 
         if (isExceeded) {
             _tripOverspeedCount.value += 1
@@ -245,7 +369,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                         licensePlate = vehicle.licensePlate,
                         alertType = "SPEEDING",
                         severity = "CRITICAL",
-                        title = "⚠️ แจ้งเตือน! รถขับเกินความเร็วที่กำหนด",
+                        title = "⚠️ แจ้งเตือน! รถขับเกินความเร็วที่กำหนด (ผู้ขับ: $effectiveDriverName)",
                         description = "ความเร็วปัจจุบัน ${speedKmh} กม./ชม. (ขีดจำกัด ${limit} กม./ชม.) ณ ${placeName}",
                         latitude = lat,
                         longitude = lng,
@@ -261,7 +385,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                             vehicleId = vehicle.id,
                             vehicleName = vehicle.name,
                             licensePlate = vehicle.licensePlate,
-                            driverName = vehicle.driverName,
+                            driverName = effectiveDriverName,
                             status = "⚠️ OVERSPEED (ขับเร็ว ${speedKmh} กม./ชม. เกินจำกัด ${limit} กม./ชม.)",
                             latitude = lat,
                             longitude = lng,
@@ -297,6 +421,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
         }
 
         checkAndHandleOverspeed(vehicle, speedKmh, lat, lng)
+        checkAndRecordRestStop(vehicle, speedKmh, lat, lng)
 
         // Accumulate trip distance if trip is active
         if (_isTripActive.value) {
@@ -331,6 +456,12 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                 if (_isTripActive.value && (now - lastSyncTimeMs > 5000L)) {
                     lastSyncTimeMs = now
                     
+                    val loggedInUser = _currentUser.value
+                    val effectiveDriverName = loggedInUser?.name?.takeIf { it.isNotBlank() }
+                        ?: loggedInUser?.username?.takeIf { it.isNotBlank() }
+                        ?: vehicle.driverName
+                        ?: "ผู้ใช้งานระบบ"
+
                     if (_isSupabaseSyncEnabled.value) {
                         viewModelScope.launch {
                             val sbResult = com.example.util.SupabaseSyncManager.sendTelemetryToSupabase(
@@ -339,10 +470,10 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                                 vehicleId = vehicle.id,
                                 vehicleName = vehicle.name,
                                 licensePlate = vehicle.licensePlate,
-                                driverName = vehicle.driverName,
-                                officeName = vehicle.officeName,
-                                postalCode = vehicle.postalCode,
-                                provinceGroup = vehicle.provinceGroup,
+                                driverName = effectiveDriverName,
+                                officeName = loggedInUser?.officeName?.takeIf { it.isNotBlank() } ?: vehicle.officeName,
+                                postalCode = loggedInUser?.postalCode?.takeIf { it.isNotBlank() } ?: vehicle.postalCode,
+                                provinceGroup = loggedInUser?.provinceGroup?.takeIf { it.isNotBlank() } ?: vehicle.provinceGroup,
                                 status = currentStatus,
                                 latitude = lat,
                                 longitude = lng,
@@ -360,7 +491,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                             vehicleId = vehicle.id,
                             vehicleName = vehicle.name,
                             licensePlate = vehicle.licensePlate,
-                            driverName = vehicle.driverName,
+                            driverName = effectiveDriverName,
                             status = currentStatus,
                             latitude = lat,
                             longitude = lng,
@@ -402,6 +533,12 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
         }
 
         val vehicle = activeVehicle.value
+        val loggedInUser = _currentUser.value
+        val effectiveDriverName = loggedInUser?.name?.takeIf { it.isNotBlank() }
+            ?: loggedInUser?.username?.takeIf { it.isNotBlank() }
+            ?: vehicle?.driverName
+            ?: "ผู้ใช้งานระบบ"
+
         if (vehicle != null) {
             lastGpsLat = vehicle.currentLat
             lastGpsLng = vehicle.currentLng
@@ -413,7 +550,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                     speedKmh = vehicle.speedKmh,
                     heading = vehicle.headingBearing
                 )
-                _lastSyncStatus.value = "เริ่มออกเดินทางแล้ว (เปิดรับส่งพิกัดสด GPS มือถือ)"
+                _lastSyncStatus.value = "เริ่มออกเดินทางแล้ว (ผู้ขับ: $effectiveDriverName)"
                 val currentStatus = "MOVING (เริ่มเดินทาง GPS สด)"
                 
                 if (_isSupabaseSyncEnabled.value) {
@@ -423,16 +560,32 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                         vehicleId = vehicle.id,
                         vehicleName = vehicle.name,
                         licensePlate = vehicle.licensePlate,
-                        driverName = vehicle.driverName,
-                        officeName = vehicle.officeName,
-                        postalCode = vehicle.postalCode,
-                        provinceGroup = vehicle.provinceGroup,
+                        driverName = effectiveDriverName,
+                        officeName = loggedInUser?.officeName?.takeIf { it.isNotBlank() } ?: vehicle.officeName,
+                        postalCode = loggedInUser?.postalCode?.takeIf { it.isNotBlank() } ?: vehicle.postalCode,
+                        provinceGroup = loggedInUser?.provinceGroup?.takeIf { it.isNotBlank() } ?: vehicle.provinceGroup,
                         status = currentStatus,
                         latitude = vehicle.currentLat,
                         longitude = vehicle.currentLng,
                         speedKmh = vehicle.speedKmh,
                         fuelPercent = vehicle.fuelPercent,
                         batteryVoltage = vehicle.batteryVoltage
+                    )
+
+                    // Log this user's trip start into vehicle_usage_logs table
+                    com.example.util.SupabaseSyncManager.logVehicleUsage(
+                        baseUrl = _supabaseUrl.value,
+                        anonKey = _supabaseAnonKey.value,
+                        vehicleId = vehicle.id,
+                        licensePlate = vehicle.licensePlate,
+                        driverName = effectiveDriverName,
+                        userId = loggedInUser?.id,
+                        officeName = loggedInUser?.officeName?.takeIf { it.isNotBlank() } ?: vehicle.officeName,
+                        postalCode = loggedInUser?.postalCode?.takeIf { it.isNotBlank() } ?: vehicle.postalCode,
+                        provinceGroup = loggedInUser?.provinceGroup?.takeIf { it.isNotBlank() } ?: vehicle.provinceGroup,
+                        status = "IN_PROGRESS",
+                        startLat = vehicle.currentLat,
+                        startLng = vehicle.currentLng
                     )
                 }
 
@@ -442,7 +595,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                         vehicleId = vehicle.id,
                         vehicleName = vehicle.name,
                         licensePlate = vehicle.licensePlate,
-                        driverName = vehicle.driverName,
+                        driverName = effectiveDriverName,
                         status = currentStatus,
                         latitude = vehicle.currentLat,
                         longitude = vehicle.currentLng,
@@ -466,6 +619,12 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                 if (_isTripPaused.value) continue
 
                 val vehicle = activeVehicle.value ?: continue
+                val loggedInUser = _currentUser.value
+                val effectiveDriverName = loggedInUser?.name?.takeIf { it.isNotBlank() }
+                    ?: loggedInUser?.username?.takeIf { it.isNotBlank() }
+                    ?: vehicle.driverName
+                    ?: "ผู้ใช้งานระบบ"
+
                 val currentStatus = if (_isSimulating.value) {
                     "MOVING (จำลองการวิ่ง)"
                 } else if (vehicle.speedKmh > 3) {
@@ -481,10 +640,10 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                         vehicleId = vehicle.id,
                         vehicleName = vehicle.name,
                         licensePlate = vehicle.licensePlate,
-                        driverName = vehicle.driverName,
-                        officeName = vehicle.officeName,
-                        postalCode = vehicle.postalCode,
-                        provinceGroup = vehicle.provinceGroup,
+                        driverName = effectiveDriverName,
+                        officeName = loggedInUser?.officeName?.takeIf { it.isNotBlank() } ?: vehicle.officeName,
+                        postalCode = loggedInUser?.postalCode?.takeIf { it.isNotBlank() } ?: vehicle.postalCode,
+                        provinceGroup = loggedInUser?.provinceGroup?.takeIf { it.isNotBlank() } ?: vehicle.provinceGroup,
                         status = currentStatus,
                         latitude = vehicle.currentLat,
                         longitude = vehicle.currentLng,
@@ -502,7 +661,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                         vehicleId = vehicle.id,
                         vehicleName = vehicle.name,
                         licensePlate = vehicle.licensePlate,
-                        driverName = vehicle.driverName,
+                        driverName = effectiveDriverName,
                         status = currentStatus,
                         latitude = vehicle.currentLat,
                         longitude = vehicle.currentLng,
@@ -520,6 +679,12 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
         _isTripPaused.value = newPausedState
 
         val vehicle = activeVehicle.value
+        val loggedInUser = _currentUser.value
+        val effectiveDriverName = loggedInUser?.name?.takeIf { it.isNotBlank() }
+            ?: loggedInUser?.username?.takeIf { it.isNotBlank() }
+            ?: vehicle?.driverName
+            ?: "ผู้ใช้งานระบบ"
+
         if (vehicle != null) {
             viewModelScope.launch {
                 val statusText = if (newPausedState) "⏸️ พักรถ (พักการทำงาน GPS)" else "▶️ เดินทางต่อ"
@@ -537,7 +702,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                         vehicleId = vehicle.id,
                         vehicleName = vehicle.name,
                         licensePlate = vehicle.licensePlate,
-                        driverName = vehicle.driverName,
+                        driverName = effectiveDriverName,
                         status = statusText,
                         latitude = vehicle.currentLat,
                         longitude = vehicle.currentLng,
@@ -588,6 +753,12 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
             e.printStackTrace()
         }
 
+        val loggedInUser = _currentUser.value
+        val effectiveDriverName = loggedInUser?.name?.takeIf { it.isNotBlank() }
+            ?: loggedInUser?.username?.takeIf { it.isNotBlank() }
+            ?: vehicle?.driverName
+            ?: "ผู้ใช้งานระบบ"
+
         if (vehicle != null) {
             viewModelScope.launch {
                 repository.updateVehiclePosition(
@@ -597,7 +768,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                     speedKmh = 0,
                     heading = vehicle.headingBearing
                 )
-                _lastSyncStatus.value = "ถึงที่หมายแล้ว (สรุปการเดินทางเรียบร้อย)"
+                _lastSyncStatus.value = "ถึงที่หมายแล้ว (บันทึกประวัติการใช้งานของ $effectiveDriverName)"
                 if (_isSupabaseSyncEnabled.value) {
                     com.example.util.SupabaseSyncManager.sendTelemetryToSupabase(
                         baseUrl = _supabaseUrl.value,
@@ -605,10 +776,10 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                         vehicleId = vehicle.id,
                         vehicleName = vehicle.name,
                         licensePlate = vehicle.licensePlate,
-                        driverName = vehicle.driverName,
-                        officeName = vehicle.officeName,
-                        postalCode = vehicle.postalCode,
-                        provinceGroup = vehicle.provinceGroup,
+                        driverName = effectiveDriverName,
+                        officeName = loggedInUser?.officeName?.takeIf { it.isNotBlank() } ?: vehicle.officeName,
+                        postalCode = loggedInUser?.postalCode?.takeIf { it.isNotBlank() } ?: vehicle.postalCode,
+                        provinceGroup = loggedInUser?.provinceGroup?.takeIf { it.isNotBlank() } ?: vehicle.provinceGroup,
                         status = "COMPLETED (สิ้นสุดการเดินทาง)",
                         latitude = vehicle.currentLat,
                         longitude = vehicle.currentLng,
@@ -616,13 +787,31 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                         fuelPercent = vehicle.fuelPercent,
                         batteryVoltage = vehicle.batteryVoltage
                     )
+
+                    // Log this user's trip completion into vehicle_usage_logs table
+                    com.example.util.SupabaseSyncManager.logVehicleUsage(
+                        baseUrl = _supabaseUrl.value,
+                        anonKey = _supabaseAnonKey.value,
+                        vehicleId = vehicle.id,
+                        licensePlate = vehicle.licensePlate,
+                        driverName = effectiveDriverName,
+                        userId = loggedInUser?.id,
+                        officeName = loggedInUser?.officeName?.takeIf { it.isNotBlank() } ?: vehicle.officeName,
+                        postalCode = loggedInUser?.postalCode?.takeIf { it.isNotBlank() } ?: vehicle.postalCode,
+                        provinceGroup = loggedInUser?.provinceGroup?.takeIf { it.isNotBlank() } ?: vehicle.provinceGroup,
+                        status = "COMPLETED",
+                        endLat = vehicle.currentLat,
+                        endLng = vehicle.currentLng,
+                        totalDistanceKm = _tripDistanceMeters.value / 1000.0,
+                        maxSpeedKmh = _tripTopSpeedKmh.value
+                    )
                 }
                 com.example.util.GoogleSheetsSyncManager.sendTelemetryToGoogleSheets(
                     webhookUrl = _googleSheetsUrl.value,
                     vehicleId = vehicle.id,
                     vehicleName = vehicle.name,
                     licensePlate = vehicle.licensePlate,
-                    driverName = vehicle.driverName,
+                    driverName = effectiveDriverName,
                     status = "PARKED (ถึงเป้าหมายเรียบร้อย)",
                     latitude = vehicle.currentLat,
                     longitude = vehicle.currentLng,
@@ -1202,7 +1391,15 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                     val userEntities = list.mapNotNull { jsonObj ->
                         val uId = jsonObj.optString("id")
                         if (uId.isNotBlank()) {
-                            val rawOffice = jsonObj.optString("office_name", "ปณ.เมืองขอนแก่น")
+                            val rawOffice = jsonObj.optString("officename").ifBlank {
+                                jsonObj.optString("office_name", "ปณ.เมืองขอนแก่น")
+                            }
+                            val rawProvince = jsonObj.optString("provincegroup").ifBlank {
+                                jsonObj.optString("province_group", "ขอนแก่น (ขก)")
+                            }
+                            val rawPassword = jsonObj.optString("password").ifBlank {
+                                jsonObj.optString("pincode", "123456")
+                            }
                             val rawPostal = jsonObj.optString("postal_code").ifBlank {
                                 jsonObj.optString("postalcode").ifBlank {
                                     jsonObj.optString("zip_code").ifBlank {
@@ -1225,10 +1422,10 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                                 role = jsonObj.optString("role", "DRIVER"),
                                 email = jsonObj.optString("email", ""),
                                 phone = jsonObj.optString("phone", ""),
-                                password = jsonObj.optString("password", "123456"),
+                                password = rawPassword,
                                 officeName = rawOffice,
                                 postalCode = postal,
-                                provinceGroup = jsonObj.optString("province_group", "ขอนแก่น (ขก)"),
+                                provinceGroup = rawProvince,
                                 assignedVehicleId = jsonObj.optString("assigned_vehicle_id", ""),
                                 status = jsonObj.optString("status", "ACTIVE")
                             )

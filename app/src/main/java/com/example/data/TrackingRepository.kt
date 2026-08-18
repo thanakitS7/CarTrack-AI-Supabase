@@ -211,6 +211,20 @@ class TrackingRepository(private val dao: AppDao) {
         dao.deleteUser(userId)
     }
 
+    val allUsageLogs: Flow<List<VehicleUsageLogEntity>> = dao.getAllUsageLogs()
+
+    fun getUsageLogsForVehicle(vehicleId: String): Flow<List<VehicleUsageLogEntity>> {
+        return dao.getUsageLogsForVehicle(vehicleId)
+    }
+
+    suspend fun addVehicleUsageLog(log: VehicleUsageLogEntity) = withContext(Dispatchers.IO) {
+        dao.insertUsageLog(log)
+    }
+
+    suspend fun deleteVehicleUsageLog(logId: String) = withContext(Dispatchers.IO) {
+        dao.deleteUsageLog(logId)
+    }
+
     fun parseWaypoints(jsonStr: String): List<LatLng> {
         if (jsonStr.isBlank()) return emptyList()
         return try {

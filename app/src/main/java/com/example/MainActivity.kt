@@ -118,23 +118,23 @@ fun AutoGuardApp() {
             topBar = {
                 Surface(
                     color = Color(0xFF0F172A),
-                    tonalElevation = 4.dp
+                    tonalElevation = 2.dp
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f, fill = false)
                         ) {
                             Surface(
                                 shape = CircleShape,
-                                color = roleColor.copy(alpha = 0.25f),
-                                modifier = Modifier.size(34.dp)
+                                color = roleColor.copy(alpha = 0.2f),
+                                modifier = Modifier.size(30.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
@@ -145,41 +145,41 @@ fun AutoGuardApp() {
                                         },
                                         contentDescription = null,
                                         tint = roleColor,
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier.size(16.dp)
                                     )
                                 }
                             }
 
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
 
                             Column {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
                                         text = user.name,
                                         color = Color.White,
-                                        fontSize = 13.sp,
+                                        fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Surface(
-                                        shape = RoundedCornerShape(4.dp),
-                                        color = roleColor.copy(alpha = 0.3f)
+                                        shape = RoundedCornerShape(3.dp),
+                                        color = roleColor.copy(alpha = 0.25f)
                                     ) {
                                         Text(
                                             text = user.role,
                                             color = roleColor,
-                                            fontSize = 9.sp,
+                                            fontSize = 8.sp,
                                             fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
                                         )
                                     }
                                 }
                                 Text(
-                                    text = "🚗 ${activeVehicle?.licensePlate ?: "ยังไม่เลือก"} • 🏢 ${user.officeName}",
-                                    color = Color(0xFF38BDF8),
-                                    fontSize = 11.sp,
+                                    text = "🏢 ${user.officeName}",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 10.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -196,12 +196,13 @@ fun AutoGuardApp() {
                                 colors = ButtonDefaults.outlinedButtonColors(
                                     contentColor = Color(0xFF38BDF8)
                                 ),
-                                modifier = Modifier.height(34.dp)
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                modifier = Modifier.height(28.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.DirectionsCar,
                                     contentDescription = null,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(12.dp)
                                 )
                                 Spacer(modifier = Modifier.width(2.dp))
                                 Text("สลับรถ", fontSize = 10.sp, fontWeight = FontWeight.Bold)
@@ -213,12 +214,13 @@ fun AutoGuardApp() {
                                 colors = ButtonDefaults.outlinedButtonColors(
                                     contentColor = Color(0xFFF87171)
                                 ),
-                                modifier = Modifier.height(34.dp)
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                modifier = Modifier.height(28.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.ExitToApp,
                                     contentDescription = null,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(12.dp)
                                 )
                                 Spacer(modifier = Modifier.width(2.dp))
                                 Text("ออก", fontSize = 10.sp, fontWeight = FontWeight.Bold)
