@@ -3,6 +3,7 @@ name: Build Android APK
 on:
   push:
     branches: [ "main", "master" ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -18,18 +19,27 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
+    # ล็อคเวอร์ชัน Gradle เป็น 8.11.1 (เวอร์ชันที่เสถียรและเข้ากับ Android Gradle Plugin 8.7+ และ KSP ได้ 100%)
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: '8.11.1'
 
-    # --- สเต็ปที่เพิ่มเข้ามา: สั่งจำลองไฟล์ .env.example อัตโนมัติ ---
+    # สร้างไฟล์จำลอง .env.example
     - name: Create missing .env.example file
       run: touch .env.example
+
+    # สร้างไฟล์หลอก google-services.json ป้องกัน Plugin เออเร่อ
+    - name: Create Mock google-services.json
+      run: |
+        mkdir -p app
+        echo '{"project_info":{"project_number":"123456789","project_id":"dummy-app"},"client":[{"client_info":{"mobilesdk_app_id":"1:123456789:android:abcdef"}}]}' > app/google-services.json
 
     - name: Generate Debug Keystore
       run: keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
 
     - name: Build Debug APK
-      run: gradle assembleDebug
+      run: gradle assembleDebug --no-daemon
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
