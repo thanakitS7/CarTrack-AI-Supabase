@@ -1291,34 +1291,84 @@
             return p;
         }
 
-        async function fetchHistoryPointsForVehicle(vehicleId) {
-            if (!vehicleId) return [];
+        async function fetchHistoryPointsForVehicle(vehicleIdentifier) {
+            if (!vehicleIdentifier) return [];
             const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
             const headers = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
 
+            let vId = String(vehicleIdentifier);
+            let plateStr = '';
+            
+            // Check if vehicleIdentifier is an object or find vehicle in memory
+            const veh = vehiclesData.find(v => v.vehicle_id === vId || v.id === vId || v.license_plate === vId);
+            if (veh) {
+                vId = veh.vehicle_id;
+                plateStr = veh.license_plate;
+            }
+
+            const cleanPlateKey = (str) => {
+                if (!str) return '';
+                return String(str).replace(/[\s\-_]/g, '').trim().toLowerCase();
+            };
+
+            const queryKeys = [vId];
+            if (plateStr && !queryKeys.includes(plateStr)) queryKeys.push(plateStr);
+
             const tables = ['location_history', 'telemetry_history', 'vehicle_usage_logs'];
             for (const tbl of tables) {
-                try {
-                    // Try vehicle_id match
-                    let res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?vehicle_id=eq.${vehicleId}&order=created_at.asc&limit=300`, { headers });
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (Array.isArray(data) && data.length > 0) {
-                            return data.map(p => normalizeHistoryPoint(p));
+                for (const qk of queryKeys) {
+                    try {
+                        let res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?vehicle_id=eq.${encodeURIComponent(qk)}&order=created_at.asc&limit=300`, { headers });
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (Array.isArray(data) && data.length > 0) {
+                                return data.map(p => normalizeHistoryPoint(p));
+                            }
                         }
-                    }
-                    // Try id match
-                    res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?id=eq.${vehicleId}&order=created_at.asc&limit=300`, { headers });
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (Array.isArray(data) && data.length > 0) {
-                            return data.map(p => normalizeHistoryPoint(p));
+
+                        res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?license_plate=eq.${encodeURIComponent(qk)}&order=created_at.asc&limit=300`, { headers });
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (Array.isArray(data) && data.length > 0) {
+                                return data.map(p => normalizeHistoryPoint(p));
+                            }
                         }
+
+                        res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?id=eq.${encodeURIComponent(qk)}&order=created_at.asc&limit=300`, { headers });
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (Array.isArray(data) && data.length > 0) {
+                                return data.map(p => normalizeHistoryPoint(p));
+                            }
+                        }
+                    } catch (e) {
+                        console.warn(`Fetch history from ${tbl} error:`, e);
                     }
-                } catch (e) {
-                    console.warn(`Fetch history from ${tbl} error:`, e);
                 }
             }
+
+            // Fallback: fetch last 100 rows and fuzzy match license plate
+            if (plateStr) {
+                const normTargetPlate = cleanPlateKey(plateStr);
+                for (const tbl of tables) {
+                    try {
+                        const res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?order=created_at.asc&limit=200`, { headers });
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (Array.isArray(data)) {
+                                const matched = data.filter(p => {
+                                    const pPlate = cleanPlateKey(p.license_plate || p.vehicle_id || '');
+                                    return pPlate === normTargetPlate || (normTargetPlate.length >= 4 && pPlate.includes(normTargetPlate.slice(-4)));
+                                });
+                                if (matched.length > 0) {
+                                    return matched.map(p => normalizeHistoryPoint(p));
+                                }
+                            }
+                        }
+                    } catch (e) {}
+                }
+            }
+
             return [];
         }
 
@@ -1383,11 +1433,38 @@
                     }
                 } catch (e) {}
 
+                // Helper function to normalize license plates for fuzzy matching (e.g. "ผมน-9529", "ผม - 9529 กทม", "9529" -> "9529")
+                const cleanPlateKey = (str) => {
+                    if (!str) return '';
+                    return String(str).replace(/[\s\-_]/g, '').trim().toLowerCase();
+                };
+
                 // 4. Merge vehicles with live GPS coordinates, status, driver, and distance
                 vehiclesData = baseVehicles.map(v => {
                     const vId = String(v.vehicle_id || v.id || '');
-                    const liveLoc = latestLocationsMap[vId] || latestLocationsMap[v.license_plate];
-                    const liveUsage = latestUsageMap[vId] || latestUsageMap[v.license_plate];
+                    const normPlate = cleanPlateKey(v.license_plate);
+
+                    // Find matching live location by vehicle ID or matching license plate
+                    let liveLoc = latestLocationsMap[vId] || latestLocationsMap[v.license_plate];
+                    if (!liveLoc && normPlate) {
+                        for (const [key, loc] of Object.entries(latestLocationsMap)) {
+                            if (cleanPlateKey(loc.license_plate) === normPlate || (loc.license_plate && cleanPlateKey(loc.license_plate).includes(normPlate)) || (normPlate.length >= 4 && cleanPlateKey(loc.license_plate).includes(normPlate.slice(-4)))) {
+                                liveLoc = loc;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Find matching live usage log
+                    let liveUsage = latestUsageMap[vId] || latestUsageMap[v.license_plate];
+                    if (!liveUsage && normPlate) {
+                        for (const [key, u] of Object.entries(latestUsageMap)) {
+                            if (cleanPlateKey(u.license_plate) === normPlate || (u.license_plate && cleanPlateKey(u.license_plate).includes(normPlate)) || (normPlate.length >= 4 && cleanPlateKey(u.license_plate).includes(normPlate.slice(-4)))) {
+                                liveUsage = u;
+                                break;
+                            }
+                        }
+                    }
 
                     if (liveLoc) {
                         if (liveLoc.latitude && Number(liveLoc.latitude) !== 0) v.latitude = Number(liveLoc.latitude);
@@ -1401,17 +1478,18 @@
                         if (liveUsage.office_name && liveUsage.office_name.trim() !== '') v.office_name = liveUsage.office_name;
                         if (liveUsage.province_group && liveUsage.province_group.trim() !== '') v.province_group = liveUsage.province_group;
                         if (liveUsage.status) v.status = liveUsage.status;
-                        if (!v.latitude && liveUsage.start_lat) v.latitude = liveUsage.start_lat;
-                        if (!v.longitude && liveUsage.start_lng) v.longitude = liveUsage.start_lng;
+                        if ((!v.latitude || v.latitude === 0) && liveUsage.start_lat) v.latitude = liveUsage.start_lat;
+                        if ((!v.longitude || v.longitude === 0) && liveUsage.start_lng) v.longitude = liveUsage.start_lng;
                     }
 
                     return v;
                 });
 
                 // 5. Also dynamically include vehicles discovered in location_history or vehicle_usage_logs that may not be in 'vehicles' table
-                const registeredIds = new Set(vehiclesData.map(v => String(v.vehicle_id || v.id)));
+                const registeredPlates = new Set(vehiclesData.map(v => cleanPlateKey(v.license_plate)));
                 for (const [vKey, u] of Object.entries(latestUsageMap)) {
-                    if (!registeredIds.has(vKey) && vKey !== '') {
+                    const uPlateKey = cleanPlateKey(u.license_plate || vKey);
+                    if (!registeredPlates.has(uPlateKey) && vKey !== '') {
                         const newVeh = normalizeVehicle({
                             id: vKey,
                             vehicle_id: vKey,
@@ -1432,7 +1510,7 @@
                             if (liveLoc.created_at) newVeh.updated_at = liveLoc.created_at;
                         }
                         vehiclesData.push(newVeh);
-                        registeredIds.add(vKey);
+                        registeredPlates.add(uPlateKey);
                     }
                 }
 
