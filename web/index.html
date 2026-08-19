@@ -1463,8 +1463,12 @@
                     // Find matching live location by vehicle ID or matching license plate
                     let liveLoc = latestLocationsMap[vId] || latestLocationsMap[v.license_plate];
                     if (!liveLoc && normPlate) {
+                        liveLoc = latestLocationsMap[normPlate];
+                    }
+                    if (!liveLoc && normPlate) {
                         for (const [key, loc] of Object.entries(latestLocationsMap)) {
-                            if (cleanPlateKey(loc.license_plate) === normPlate || (loc.license_plate && cleanPlateKey(loc.license_plate).includes(normPlate)) || (normPlate.length >= 4 && cleanPlateKey(loc.license_plate).includes(normPlate.slice(-4)))) {
+                            const lPlate = cleanPlateKey(loc.license_plate || loc.vehicle_id || key);
+                            if (lPlate === normPlate || lPlate.includes(normPlate) || normPlate.includes(lPlate) || (normPlate.length >= 4 && lPlate.includes(normPlate.slice(-4)))) {
                                 liveLoc = loc;
                                 break;
                             }
@@ -1474,8 +1478,12 @@
                     // Find matching live usage log
                     let liveUsage = latestUsageMap[vId] || latestUsageMap[v.license_plate];
                     if (!liveUsage && normPlate) {
+                        liveUsage = latestUsageMap[normPlate];
+                    }
+                    if (!liveUsage && normPlate) {
                         for (const [key, u] of Object.entries(latestUsageMap)) {
-                            if (cleanPlateKey(u.license_plate) === normPlate || (u.license_plate && cleanPlateKey(u.license_plate).includes(normPlate)) || (normPlate.length >= 4 && cleanPlateKey(u.license_plate).includes(normPlate.slice(-4)))) {
+                            const uPlate = cleanPlateKey(u.license_plate || u.vehicle_id || key);
+                            if (uPlate === normPlate || uPlate.includes(normPlate) || normPlate.includes(uPlate) || (normPlate.length >= 4 && uPlate.includes(normPlate.slice(-4)))) {
                                 liveUsage = u;
                                 break;
                             }
@@ -1504,6 +1512,31 @@
 
                 // 5. Also dynamically include vehicles discovered in location_history or vehicle_usage_logs that may not be in 'vehicles' table
                 const registeredPlates = new Set(vehiclesData.map(v => cleanPlateKey(v.license_plate)));
+                
+                // Add from latestLocationsMap first
+                for (const [vKey, loc] of Object.entries(latestLocationsMap)) {
+                    const locPlateKey = cleanPlateKey(loc.license_plate || vKey);
+                    if (!registeredPlates.has(locPlateKey) && vKey !== '') {
+                        const newVeh = normalizeVehicle({
+                            id: vKey,
+                            vehicle_id: vKey,
+                            vehicle_name: `รถ ${loc.license_plate || vKey}`,
+                            license_plate: loc.license_plate || '-',
+                            driver_name: loc.driver_name || '-',
+                            office_name: loc.office_name || '-',
+                            province_group: loc.province_group || '-',
+                            latitude: Number(loc.latitude) || 0.0,
+                            longitude: Number(loc.longitude) || 0.0,
+                            speed_kmh: Number(loc.speed_kmh) || 0,
+                            status: loc.status || 'MOVING',
+                            updated_at: loc.created_at || new Date().toISOString()
+                        });
+                        vehiclesData.push(newVeh);
+                        registeredPlates.add(locPlateKey);
+                    }
+                }
+
+                // Add from latestUsageMap
                 for (const [vKey, u] of Object.entries(latestUsageMap)) {
                     const uPlateKey = cleanPlateKey(u.license_plate || vKey);
                     if (!registeredPlates.has(uPlateKey) && vKey !== '') {
@@ -1517,13 +1550,15 @@
                             province_group: u.province_group || '-',
                             latitude: u.start_lat || 0.0,
                             longitude: u.start_lng || 0.0,
-                            status: u.status || 'MOVING'
+                            status: u.status || 'MOVING',
+                            updated_at: u.created_at || new Date().toISOString()
                         });
                         const liveLoc = latestLocationsMap[vKey];
                         if (liveLoc) {
                             if (liveLoc.latitude) newVeh.latitude = Number(liveLoc.latitude);
                             if (liveLoc.longitude) newVeh.longitude = Number(liveLoc.longitude);
                             if (liveLoc.speed_kmh !== undefined) newVeh.speed_kmh = Number(liveLoc.speed_kmh);
+                            if (liveLoc.status) newVeh.status = liveLoc.status;
                             if (liveLoc.created_at) newVeh.updated_at = liveLoc.created_at;
                         }
                         vehiclesData.push(newVeh);
