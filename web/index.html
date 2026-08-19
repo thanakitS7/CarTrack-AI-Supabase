@@ -1326,22 +1326,114 @@
         async function fetchVehiclesData() {
             try {
                 const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
-                const res = await fetch(`${cleanedUrl}/rest/v1/vehicles?select=*`, {
-                    headers: {
-                        'apikey': supabaseKey,
-                        'Authorization': `Bearer ${supabaseKey}`
+                const headers = {
+                    'apikey': supabaseKey,
+                    'Authorization': `Bearer ${supabaseKey}`
+                };
+
+                // 1. Fetch registered vehicles from 'vehicles' table
+                let baseVehicles = [];
+                try {
+                    const res = await fetch(`${cleanedUrl}/rest/v1/vehicles?select=*`, { headers });
+                    if (res.ok) {
+                        const rawData = await res.json();
+                        if (Array.isArray(rawData) && rawData.length > 0) {
+                            baseVehicles = rawData.map(v => normalizeVehicle(v));
+                        }
                     }
+                } catch (e) {
+                    console.warn("Fetch vehicles error:", e);
+                }
+
+                if (baseVehicles.length === 0) {
+                    baseVehicles = DEFAULT_SAMPLE_VEHICLES.map(v => normalizeVehicle(v));
+                }
+
+                // 2. Fetch latest live locations from 'location_history' (to get real-time GPS position for all active vehicles)
+                let latestLocationsMap = {};
+                try {
+                    const locRes = await fetch(`${cleanedUrl}/rest/v1/location_history?order=created_at.desc&limit=100`, { headers });
+                    if (locRes.ok) {
+                        const locList = await locRes.json();
+                        if (Array.isArray(locList)) {
+                            for (const loc of locList) {
+                                const vKey = String(loc.vehicle_id || loc.id || '');
+                                if (vKey && !latestLocationsMap[vKey]) {
+                                    latestLocationsMap[vKey] = loc;
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {}
+
+                // 3. Fetch latest active trip details from 'vehicle_usage_logs'
+                let latestUsageMap = {};
+                try {
+                    const usageRes = await fetch(`${cleanedUrl}/rest/v1/vehicle_usage_logs?order=created_at.desc&limit=100`, { headers });
+                    if (usageRes.ok) {
+                        const usageList = await usageRes.json();
+                        if (Array.isArray(usageList)) {
+                            for (const u of usageList) {
+                                const vKey = String(u.vehicle_id || '');
+                                if (vKey && !latestUsageMap[vKey]) {
+                                    latestUsageMap[vKey] = u;
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {}
+
+                // 4. Merge vehicles with live GPS coordinates, status, driver, and distance
+                vehiclesData = baseVehicles.map(v => {
+                    const vId = String(v.vehicle_id || v.id || '');
+                    const liveLoc = latestLocationsMap[vId] || latestLocationsMap[v.license_plate];
+                    const liveUsage = latestUsageMap[vId] || latestUsageMap[v.license_plate];
+
+                    if (liveLoc) {
+                        if (liveLoc.latitude && Number(liveLoc.latitude) !== 0) v.latitude = Number(liveLoc.latitude);
+                        if (liveLoc.longitude && Number(liveLoc.longitude) !== 0) v.longitude = Number(liveLoc.longitude);
+                        if (liveLoc.speed_kmh !== undefined) v.speed_kmh = Number(liveLoc.speed_kmh);
+                        if (liveLoc.created_at) v.updated_at = liveLoc.created_at;
+                    }
+
+                    if (liveUsage) {
+                        if (liveUsage.driver_name && liveUsage.driver_name.trim() !== '') v.driver_name = liveUsage.driver_name;
+                        if (liveUsage.office_name && liveUsage.office_name.trim() !== '') v.office_name = liveUsage.office_name;
+                        if (liveUsage.province_group && liveUsage.province_group.trim() !== '') v.province_group = liveUsage.province_group;
+                        if (liveUsage.status) v.status = liveUsage.status;
+                        if (!v.latitude && liveUsage.start_lat) v.latitude = liveUsage.start_lat;
+                        if (!v.longitude && liveUsage.start_lng) v.longitude = liveUsage.start_lng;
+                    }
+
+                    return v;
                 });
 
-                if (res.ok) {
-                    const rawData = await res.json();
-                    if (Array.isArray(rawData) && rawData.length > 0) {
-                        vehiclesData = rawData.map(v => normalizeVehicle(v));
-                    } else {
-                        vehiclesData = DEFAULT_SAMPLE_VEHICLES.map(v => normalizeVehicle(v));
+                // 5. Also dynamically include vehicles discovered in location_history or vehicle_usage_logs that may not be in 'vehicles' table
+                const registeredIds = new Set(vehiclesData.map(v => String(v.vehicle_id || v.id)));
+                for (const [vKey, u] of Object.entries(latestUsageMap)) {
+                    if (!registeredIds.has(vKey) && vKey !== '') {
+                        const newVeh = normalizeVehicle({
+                            id: vKey,
+                            vehicle_id: vKey,
+                            vehicle_name: `รถ ${u.license_plate || vKey}`,
+                            license_plate: u.license_plate || '-',
+                            driver_name: u.driver_name || '-',
+                            office_name: u.office_name || '-',
+                            province_group: u.province_group || '-',
+                            latitude: u.start_lat || 0.0,
+                            longitude: u.start_lng || 0.0,
+                            status: u.status || 'MOVING'
+                        });
+                        const liveLoc = latestLocationsMap[vKey];
+                        if (liveLoc) {
+                            if (liveLoc.latitude) newVeh.latitude = Number(liveLoc.latitude);
+                            if (liveLoc.longitude) newVeh.longitude = Number(liveLoc.longitude);
+                            if (liveLoc.speed_kmh !== undefined) newVeh.speed_kmh = Number(liveLoc.speed_kmh);
+                            if (liveLoc.created_at) newVeh.updated_at = liveLoc.created_at;
+                        }
+                        vehiclesData.push(newVeh);
+                        registeredIds.add(vKey);
                     }
-                } else {
-                    vehiclesData = DEFAULT_SAMPLE_VEHICLES.map(v => normalizeVehicle(v));
                 }
 
                 // Fetch telemetry/location history for each vehicle to calculate distance and place names

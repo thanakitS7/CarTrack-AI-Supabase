@@ -66,138 +66,36 @@ object SupabaseSyncManager {
         }
 
         try {
-            val payloadObj = JSONObject().apply {
-                // Exact columns matching Supabase schema (from Table Editor)
-                put("id", vehicleId)
-                put("name", vehicleName)
-                put("licenseplate", licensePlate)
-                put("modelyear", "2024")
-                put("status", cleanStatus)
-                put("currentlat", latitude)
-                put("currentlng", longitude)
-
-                // Additional potential columns in schema (will be dynamically stripped if not present)
+            val numId = vehicleId.replace("[^0-9]".toRegex(), "").toLongOrNull()
+            // 1. Try to ensure vehicle exists in vehicles table (id (bigint), license_plate, workplace, post_id)
+            val vPayload = JSONObject().apply {
+                if (numId != null && numId > 0) put("id", numId)
                 put("license_plate", licensePlate)
-                put("driver_name", driverName)
-                put("office_name", officeName)
-                put("postal_code", resolvedPostal)
-                put("postalcode", resolvedPostal)
-                put("zip_code", resolvedPostal)
-                put("zipcode", resolvedPostal)
-                put("รหัสไปรษณีย์", resolvedPostal)
-                put("province_group", provinceGroup)
-                put("speed_kmh", speedKmh)
-                put("fuel_percent", fuelPercent)
-                put("battery_voltage", batteryVoltage)
-                put("vehicle_name", vehicleName)
-                put("latitude", latitude)
-                put("longitude", longitude)
-                put("updated_at", timeStr)
+                if (officeName.isNotBlank()) put("workplace", officeName)
+                if (resolvedPostal.isNotBlank()) put("post_id", resolvedPostal)
             }
-
-            val mediaType = "application/json; charset=utf-8".toMediaType()
-            val columnErrorRegex = "Could not find the '([^']+)' column".toRegex()
-
-            var isSuccess = false
-            var lastResponseBody = ""
-            var lastCode = 0
-            var activeTruncateLen = 20
-
-            for (attempt in 0..15) {
-                val body = payloadObj.toString().toRequestBody(mediaType)
-
-                // Try 1: UPSERT (POST with merge-duplicates)
-                val requestUpsert = Request.Builder()
+            try {
+                val vBody = vPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+                val vReq = Request.Builder()
                     .url("$cleanedUrl/rest/v1/vehicles")
                     .addHeader("apikey", anonKey)
                     .addHeader("Authorization", "Bearer $anonKey")
                     .addHeader("Content-Type", "application/json")
                     .addHeader("Prefer", "resolution=merge-duplicates,return=representation")
-                    .post(body)
+                    .post(vBody)
                     .build()
-
-                client.newCall(requestUpsert).execute().use { response ->
-                    lastCode = response.code
-                    lastResponseBody = response.body?.string() ?: ""
-                    if (response.isSuccessful) {
-                        isSuccess = true
-                    }
-                }
-
-                // Try 2: If Upsert failed and not missing column or varchar length error, try PATCH update
-                if (!isSuccess && !lastResponseBody.contains("PGRST204") && !lastResponseBody.contains("22001")) {
-                    val patchUrl = "$cleanedUrl/rest/v1/vehicles?id=eq.$vehicleId"
-                    val requestPatch = Request.Builder()
-                        .url(patchUrl)
-                        .addHeader("apikey", anonKey)
-                        .addHeader("Authorization", "Bearer $anonKey")
-                        .addHeader("Content-Type", "application/json")
-                        .addHeader("Prefer", "return=representation")
-                        .patch(body)
-                        .build()
-
-                    client.newCall(requestPatch).execute().use { response ->
-                        lastCode = response.code
-                        val patchBody = response.body?.string() ?: ""
-                        if (response.isSuccessful && patchBody != "[]" && patchBody.isNotEmpty()) {
-                            isSuccess = true
-                            lastResponseBody = patchBody
-                        }
-                    }
-                }
-
-                // Try 3: If PATCH didn't update and not missing column or varchar length error, try standard INSERT
-                if (!isSuccess && !lastResponseBody.contains("PGRST204") && !lastResponseBody.contains("22001")) {
-                    val requestInsert = Request.Builder()
-                        .url("$cleanedUrl/rest/v1/vehicles")
-                        .addHeader("apikey", anonKey)
-                        .addHeader("Authorization", "Bearer $anonKey")
-                        .addHeader("Content-Type", "application/json")
-                        .addHeader("Prefer", "return=representation")
-                        .post(body)
-                        .build()
-
-                    client.newCall(requestInsert).execute().use { response ->
-                        lastCode = response.code
-                        lastResponseBody = response.body?.string() ?: ""
-                        if (response.isSuccessful) {
-                            isSuccess = true
-                        }
-                    }
-                }
-
-                if (isSuccess) break
-
-                // Check if error is PGRST204 (Missing Column in Supabase schema)
-                val match = columnErrorRegex.find(lastResponseBody)
-                if (match != null) {
-                    val missingColumn = match.groupValues[1]
-                    Log.w("SupabaseSync", "Removing unsupported column '$missingColumn' from vehicles payload and retrying...")
-                    payloadObj.remove(missingColumn)
-                } else if (lastResponseBody.contains("22001") || lastResponseBody.contains("value too long")) {
-                    val limitMatch = "varying\\((\\d+)\\)".toRegex().find(lastResponseBody)
-                    val detectedLimit = limitMatch?.groupValues?.get(1)?.toIntOrNull()
-                    activeTruncateLen = if (detectedLimit != null) {
-                        (detectedLimit - 1).coerceAtLeast(3)
-                    } else {
-                        (activeTruncateLen - 5).coerceAtLeast(3)
-                    }
-                    Log.w("SupabaseSync", "String value too long in Supabase. Truncating fields to $activeTruncateLen chars and retrying...")
-                    truncateStringFields(payloadObj, activeTruncateLen)
-                } else {
-                    break
-                }
+                client.newCall(vReq).execute().close()
+            } catch (e: Exception) {
+                // Non-critical
             }
 
-            if (isSuccess) {
-                Log.d("SupabaseSync", "Successfully synced to Supabase: $lastResponseBody")
-                logTelemetryHistory(cleanedUrl, anonKey, vehicleId, licensePlate, driverName, officeName, resolvedPostal, provinceGroup, latitude, longitude, speedKmh, status, timeStr)
-                logVehicleUsage(cleanedUrl, anonKey, vehicleId, licensePlate, driverName, officeName, resolvedPostal, provinceGroup, status, timeStr)
-                Result.success("ส่งข้อมูลไปยัง Supabase สำเร็จ ($timeStr)")
-            } else {
-                Log.e("SupabaseSync", "Failed Supabase request ($lastCode): $lastResponseBody")
-                Result.failure(Exception("Supabase Error ($lastCode): $lastResponseBody"))
-            }
+            // 2. Log location point to location_history
+            logTelemetryHistory(cleanedUrl, anonKey, vehicleId, licensePlate, driverName, officeName, resolvedPostal, provinceGroup, latitude, longitude, speedKmh, cleanStatus, timeStr)
+            
+            // 3. Log usage summary to vehicle_usage_logs
+            logVehicleUsage(cleanedUrl, anonKey, vehicleId, licensePlate, driverName, officeName = officeName, postalCode = resolvedPostal, provinceGroup = provinceGroup, status = cleanStatus, startLat = latitude, startLng = longitude, timestamp = timeStr)
+            
+            Result.success("ส่งข้อมูลไปยัง Supabase สำเร็จ ($timeStr)")
         } catch (e: Exception) {
             Log.e("SupabaseSync", "Error sending to Supabase", e)
             Result.failure(e)
