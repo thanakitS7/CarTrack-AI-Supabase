@@ -59,15 +59,48 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
         initialValue = emptyList()
     )
 
+    private val prefs = application.getSharedPreferences("autoguard_user_session", Context.MODE_PRIVATE)
+
     private val _currentUser = MutableStateFlow<com.example.data.UserEntity?>(null)
     val currentUser: StateFlow<com.example.data.UserEntity?> = _currentUser.asStateFlow()
 
+    private val _savedVehicleSelectedState = MutableStateFlow(false)
+    val isVehicleSelectedPersisted: StateFlow<Boolean> = _savedVehicleSelectedState.asStateFlow()
+
     fun loginUser(user: com.example.data.UserEntity) {
         _currentUser.value = user
+        prefs.edit()
+            .putString("saved_user_id", user.id)
+            .putString("saved_user_name", user.name)
+            .putString("saved_user_username", user.username)
+            .putString("saved_user_role", user.role)
+            .putString("saved_user_phone", user.phone)
+            .putString("saved_user_office", user.officeName)
+            .putString("saved_user_postal", user.postalCode)
+            .putString("saved_user_province", user.provinceGroup)
+            .apply()
     }
 
     fun logout() {
         _currentUser.value = null
+        _savedVehicleSelectedState.value = false
+        prefs.edit()
+            .remove("saved_user_id")
+            .remove("saved_user_name")
+            .remove("saved_user_username")
+            .remove("saved_user_role")
+            .remove("saved_user_phone")
+            .remove("saved_user_office")
+            .remove("saved_user_postal")
+            .remove("saved_user_province")
+            .remove("saved_vehicle_id")
+            .remove("is_vehicle_selected")
+            .apply()
+    }
+
+    fun setVehicleSelectedState(selected: Boolean) {
+        _savedVehicleSelectedState.value = selected
+        prefs.edit().putBoolean("is_vehicle_selected", selected).apply()
     }
 
     private val _selectedVehicleId = MutableStateFlow("V001")
@@ -176,6 +209,29 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
     )
 
     init {
+        // Restore user session if previously logged in
+        val savedUserId = prefs.getString("saved_user_id", null)
+        val savedUserName = prefs.getString("saved_user_name", null)
+        if (!savedUserId.isNullOrBlank() && !savedUserName.isNullOrBlank()) {
+            _currentUser.value = com.example.data.UserEntity(
+                id = savedUserId,
+                name = savedUserName,
+                username = prefs.getString("saved_user_username", "") ?: "",
+                role = prefs.getString("saved_user_role", "DRIVER") ?: "DRIVER",
+                phone = prefs.getString("saved_user_phone", "") ?: "",
+                officeName = prefs.getString("saved_user_office", "ปณ.เมืองขอนแก่น") ?: "ปณ.เมืองขอนแก่น",
+                postalCode = prefs.getString("saved_user_postal", "40000") ?: "40000",
+                provinceGroup = prefs.getString("saved_user_province", "ขอนแก่น (ขก)") ?: "ขอนแก่น (ขก)"
+            )
+        }
+
+        val savedVehId = prefs.getString("saved_vehicle_id", null)
+        if (!savedVehId.isNullOrBlank()) {
+            _selectedVehicleId.value = savedVehId
+        }
+        val isVehSelected = prefs.getBoolean("is_vehicle_selected", false)
+        _savedVehicleSelectedState.value = isVehSelected
+
         viewModelScope.launch {
             repository.initializeSampleDataIfNeeded()
             // Initial sync from Supabase cloud
@@ -445,7 +501,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                 heading = heading
             )
 
-                // Auto-sync real GPS coordinates to Supabase & Google Sheets if trip is active
+                // Auto-sync real GPS coordinates to Supabase & Google Sheets
                 val now = System.currentTimeMillis()
                 val currentStatus = if (_isTripActive.value) {
                     if (speedKmh > 3) "MOVING (กำลังวิ่ง GPS สด)" else "MOVING (เริ่มเดินทาง GPS สด)"
@@ -453,7 +509,9 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                     if (speedKmh > 3) "MOVING (ขับขี่พักทริป)" else "IDLE (จอดพัก)"
                 }
 
-                if (_isTripActive.value && (now - lastSyncTimeMs > 5000L)) {
+                // Sync whenever trip is active, or if moving (>3 km/h), or every 10 seconds while app is active
+                val shouldSync = _isTripActive.value || speedKmh > 3 || (now - lastSyncTimeMs > 10000L)
+                if (shouldSync && (now - lastSyncTimeMs > 3000L)) {
                     lastSyncTimeMs = now
                     
                     val loggedInUser = _currentUser.value
@@ -830,6 +888,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
     fun selectVehicle(vehicleId: String) {
         _selectedVehicleId.value = vehicleId
         _isDeviatedTestMode.value = false
+        prefs.edit().putString("saved_vehicle_id", vehicleId).apply()
     }
 
     fun resetDatabaseWithKhonKaenData() {
@@ -1145,6 +1204,7 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                         }
 
                         if (existing != null) {
+                            val isActiveLocalVehicle = existing.id == _selectedVehicleId.value && _isRealGpsActive.value
                             repository.updateVehicle(
                                 existing.copy(
                                     name = name,
@@ -1154,11 +1214,11 @@ class TrackingViewModel(application: Application) : AndroidViewModel(application
                                     officeName = office,
                                     postalCode = postal,
                                     provinceGroup = provinceGrp,
-                                    status = rawStatus,
-                                    currentLat = if (lat != 0.0) lat else existing.currentLat,
-                                    currentLng = if (lng != 0.0) lng else existing.currentLng,
-                                    speedKmh = speed,
-                                    lastUpdateMillis = lastUpdateMs
+                                    status = if (isActiveLocalVehicle) existing.status else rawStatus,
+                                    currentLat = if (isActiveLocalVehicle) existing.currentLat else (if (lat != 0.0) lat else existing.currentLat),
+                                    currentLng = if (isActiveLocalVehicle) existing.currentLng else (if (lng != 0.0) lng else existing.currentLng),
+                                    speedKmh = if (isActiveLocalVehicle) existing.speedKmh else speed,
+                                    lastUpdateMillis = if (isActiveLocalVehicle) existing.lastUpdateMillis else lastUpdateMs
                                 )
                             )
                         } else {

@@ -41,9 +41,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,15 +82,23 @@ class MainActivity : ComponentActivity() {
 fun AutoGuardApp() {
     val viewModel: TrackingViewModel = viewModel()
     val currentUser by viewModel.currentUser.collectAsState()
+    val isVehicleSelectedPersisted by viewModel.isVehicleSelectedPersisted.collectAsState()
     val activeVehicle by viewModel.activeVehicle.collectAsState()
-    var selectedScreen by remember { mutableStateOf("LIVE_MAP") }
-    var isVehicleSelected by remember { mutableStateOf(false) }
+    var selectedScreen by rememberSaveable { mutableStateOf("LIVE_MAP") }
+    var isVehicleSelected by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(isVehicleSelectedPersisted) {
+        if (isVehicleSelectedPersisted && currentUser != null) {
+            isVehicleSelected = true
+        }
+    }
 
     if (currentUser == null) {
         LoginScreen(
             viewModel = viewModel,
             onLoginSuccess = {
                 isVehicleSelected = false
+                viewModel.setVehicleSelectedState(false)
             }
         )
     } else if (!isVehicleSelected) {
@@ -97,6 +106,7 @@ fun AutoGuardApp() {
             viewModel = viewModel,
             onVehicleConfirmed = { vehicle ->
                 isVehicleSelected = true
+                viewModel.setVehicleSelectedState(true)
                 selectedScreen = "LIVE_MAP"
             },
             onLogout = {
@@ -191,7 +201,10 @@ fun AutoGuardApp() {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             OutlinedButton(
-                                onClick = { isVehicleSelected = false },
+                                onClick = { 
+                                    isVehicleSelected = false 
+                                    viewModel.setVehicleSelectedState(false)
+                                },
                                 shape = RoundedCornerShape(8.dp),
                                 colors = ButtonDefaults.outlinedButtonColors(
                                     contentColor = Color(0xFF38BDF8)

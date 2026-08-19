@@ -1292,19 +1292,32 @@
         }
 
         async function fetchHistoryPointsForVehicle(vehicleId) {
+            if (!vehicleId) return [];
             const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
             const headers = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
 
-            try {
-                const res = await fetch(`${cleanedUrl}/rest/v1/location_history?vehicle_id=eq.${vehicleId}&order=created_at.asc&limit=300`, { headers });
-                if (res.ok) {
-                    const data = await res.json();
-                    if (Array.isArray(data)) {
-                        return data.map(p => normalizeHistoryPoint(p));
+            const tables = ['location_history', 'telemetry_history', 'vehicle_usage_logs'];
+            for (const tbl of tables) {
+                try {
+                    // Try vehicle_id match
+                    let res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?vehicle_id=eq.${vehicleId}&order=created_at.asc&limit=300`, { headers });
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (Array.isArray(data) && data.length > 0) {
+                            return data.map(p => normalizeHistoryPoint(p));
+                        }
                     }
+                    // Try id match
+                    res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?id=eq.${vehicleId}&order=created_at.asc&limit=300`, { headers });
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (Array.isArray(data) && data.length > 0) {
+                            return data.map(p => normalizeHistoryPoint(p));
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`Fetch history from ${tbl} error:`, e);
                 }
-            } catch (e) {
-                console.warn("Fetch location history error:", e);
             }
             return [];
         }
@@ -1430,14 +1443,15 @@
             const listEl = document.getElementById("vehicleList");
             const searchVal = document.getElementById("searchInput").value.toLowerCase();
 
-            // Filter vehicles active today
-            const activeVehiclesToday = vehicles.filter(v => isVehicleActiveToday(v));
+            // Display all vehicles registered in the fleet, with their real-time activity status
+            const activeVehiclesToday = vehicles;
 
             const filtered = activeVehiclesToday.filter(v => 
                 (v.vehicle_name || '').toLowerCase().includes(searchVal) ||
                 (v.license_plate || '').toLowerCase().includes(searchVal) ||
                 (v.workplace || '').toLowerCase().includes(searchVal) ||
-                (v.office_name || '').toLowerCase().includes(searchVal)
+                (v.office_name || '').toLowerCase().includes(searchVal) ||
+                (v.driver_name || '').toLowerCase().includes(searchVal)
             );
 
             document.getElementById("totalVehiclesCount").innerText = activeVehiclesToday.length;
