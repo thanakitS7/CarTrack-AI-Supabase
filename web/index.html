@@ -860,7 +860,7 @@
             if (isNaN(lastTimeMs) || lastTimeMs <= 0) return false;
 
             const diffMs = Date.now() - lastTimeMs;
-            return diffMs > 3 * 60 * 1000; // > 3 minutes without GPS updates
+            return diffMs > 15 * 60 * 1000; // > 15 minutes without GPS updates
         }
 
         function isVehicleOffline(v) {
@@ -878,7 +878,7 @@
             if (isNaN(lastTimeMs) || lastTimeMs <= 0) return false;
 
             const diffMs = Date.now() - lastTimeMs;
-            return diffMs > 10 * 60 * 1000; // > 10 minutes without update
+            return diffMs > 30 * 60 * 1000; // > 30 minutes without update
         }
 
         function getVehicleStatus(v) {
@@ -890,16 +890,23 @@
                 return "PARKED";
             }
 
-            // Check if GPS has not sent updates for a while -> Auto set to จอดพัก or ถึงที่หมาย
-            if (isVehicleInactive(v)) {
-                if (rawStatus.includes("COMPLETED") || rawStatus.includes("PARKED")) {
-                    return "PARKED";
-                }
-                return "IDLE"; // จอดพัก (IDLE) เมื่อไม่มีการเคลื่อนไหวหรือ GPS ไม่ส่งข้อมูล
+            // If active trip is in progress or moving in app (even walking/holding phone or starting trip)
+            if (rawStatus.includes("MOVING") || rawStatus.includes("IN_PROGRESS") || rawStatus.includes("กำลังวิ่ง") || rawStatus.includes("เริ่มเดินทาง") || rawStatus.includes("GPS สด") || rawStatus.includes("จำลอง")) {
+                return "MOVING";
             }
 
-            if (rawStatus.includes("MOVING") || (v.speed_kmh || 0) > 3) {
+            // If moving by speed (> 0.5 km/h)
+            if ((v.speed_kmh || 0) > 0.5) {
                 return "MOVING";
+            }
+
+            // Check if GPS has not sent updates for a very long time
+            if (isVehicleOffline(v)) {
+                return "OFFLINE";
+            }
+
+            if (isVehicleInactive(v)) {
+                return "IDLE";
             }
 
             return "IDLE";
@@ -1399,22 +1406,28 @@
                     baseVehicles = DEFAULT_SAMPLE_VEHICLES.map(v => normalizeVehicle(v));
                 }
 
-                // 2. Fetch latest live locations from 'location_history' (to get real-time GPS position for all active vehicles)
+                // 2. Fetch latest live locations from 'location_history' and 'telemetry_history'
                 let latestLocationsMap = {};
-                try {
-                    const locRes = await fetch(`${cleanedUrl}/rest/v1/location_history?order=created_at.desc&limit=100`, { headers });
-                    if (locRes.ok) {
-                        const locList = await locRes.json();
-                        if (Array.isArray(locList)) {
-                            for (const loc of locList) {
-                                const vKey = String(loc.vehicle_id || loc.id || '');
-                                if (vKey && !latestLocationsMap[vKey]) {
-                                    latestLocationsMap[vKey] = loc;
+                const locTables = ['location_history', 'telemetry_history'];
+                for (const tbl of locTables) {
+                    try {
+                        const locRes = await fetch(`${cleanedUrl}/rest/v1/${tbl}?order=created_at.desc&limit=100`, { headers });
+                        if (locRes.ok) {
+                            const locList = await locRes.json();
+                            if (Array.isArray(locList)) {
+                                for (const loc of locList) {
+                                    const vKey = String(loc.vehicle_id || loc.id || '');
+                                    if (vKey && !latestLocationsMap[vKey]) {
+                                        latestLocationsMap[vKey] = loc;
+                                    }
+                                    if (loc.license_plate && !latestLocationsMap[loc.license_plate]) {
+                                        latestLocationsMap[loc.license_plate] = loc;
+                                    }
                                 }
                             }
                         }
-                    }
-                } catch (e) {}
+                    } catch (e) {}
+                }
 
                 // 3. Fetch latest active trip details from 'vehicle_usage_logs'
                 let latestUsageMap = {};
@@ -1427,6 +1440,9 @@
                                 const vKey = String(u.vehicle_id || '');
                                 if (vKey && !latestUsageMap[vKey]) {
                                     latestUsageMap[vKey] = u;
+                                }
+                                if (u.license_plate && !latestUsageMap[u.license_plate]) {
+                                    latestUsageMap[u.license_plate] = u;
                                 }
                             }
                         }
@@ -1470,6 +1486,7 @@
                         if (liveLoc.latitude && Number(liveLoc.latitude) !== 0) v.latitude = Number(liveLoc.latitude);
                         if (liveLoc.longitude && Number(liveLoc.longitude) !== 0) v.longitude = Number(liveLoc.longitude);
                         if (liveLoc.speed_kmh !== undefined) v.speed_kmh = Number(liveLoc.speed_kmh);
+                        if (liveLoc.status) v.status = liveLoc.status;
                         if (liveLoc.created_at) v.updated_at = liveLoc.created_at;
                     }
 
@@ -1477,7 +1494,7 @@
                         if (liveUsage.driver_name && liveUsage.driver_name.trim() !== '') v.driver_name = liveUsage.driver_name;
                         if (liveUsage.office_name && liveUsage.office_name.trim() !== '') v.office_name = liveUsage.office_name;
                         if (liveUsage.province_group && liveUsage.province_group.trim() !== '') v.province_group = liveUsage.province_group;
-                        if (liveUsage.status) v.status = liveUsage.status;
+                        if (liveUsage.status && (!v.status || v.status === 'STOPPED' || v.status === 'IDLE')) v.status = liveUsage.status;
                         if ((!v.latitude || v.latitude === 0) && liveUsage.start_lat) v.latitude = liveUsage.start_lat;
                         if ((!v.longitude || v.longitude === 0) && liveUsage.start_lng) v.longitude = liveUsage.start_lng;
                     }
