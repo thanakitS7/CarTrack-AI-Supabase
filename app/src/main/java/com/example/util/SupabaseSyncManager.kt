@@ -45,7 +45,7 @@ object SupabaseSyncManager {
         provinceGroup: String = ""
     ): Result<String> = withContext(Dispatchers.IO) {
         val cleanedUrl = baseUrl.trim().removeSuffix("/").removeSuffix("/rest/v1")
-        val timeStr = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).format(Date())
+        val timeStr = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(Date())
 
         val resolvedPostal = if (postalCode.isNotBlank()) postalCode else {
             if (officeName.contains("ศป.") || officeName.contains("ศูนย์ไปรษณีย์") || licensePlate.contains("70-1122")) "40010"
@@ -223,7 +223,7 @@ object SupabaseSyncManager {
         endLng: Double? = null,
         totalDistanceKm: Double? = null,
         maxSpeedKmh: Int? = null,
-        timestamp: String = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).format(Date())
+        timestamp: String = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(Date())
     ) {
         val cleanedUrl = baseUrl.trim().removeSuffix("/").removeSuffix("/rest/v1")
         val cleanStatus = when {
@@ -550,8 +550,8 @@ object SupabaseSyncManager {
         parkEndTimeMs: Long
     ): Result<String> = withContext(Dispatchers.IO) {
         val cleanedUrl = baseUrl.trim().removeSuffix("/").removeSuffix("/rest/v1")
-        val startIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).format(Date(parkStartTimeMs))
-        val endIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).format(Date(parkEndTimeMs))
+        val startIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(Date(parkStartTimeMs))
+        val endIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(Date(parkEndTimeMs))
 
         try {
             val payloadObj = JSONObject().apply {

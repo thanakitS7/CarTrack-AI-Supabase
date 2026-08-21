@@ -1339,11 +1339,17 @@
             const queryKeys = [vId];
             if (plateStr && !queryKeys.includes(plateStr)) queryKeys.push(plateStr);
 
+            const now = new Date();
+            const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+            const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+            const startIso = startOfDay.toISOString();
+            const endIso = endOfDay.toISOString();
+
             const tables = ['location_history', 'telemetry_history', 'vehicle_usage_logs'];
             for (const tbl of tables) {
                 for (const qk of queryKeys) {
                     try {
-                        let res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?vehicle_id=eq.${encodeURIComponent(qk)}&order=created_at.asc&limit=300`, { headers });
+                        let res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?vehicle_id=eq.${encodeURIComponent(qk)}&created_at=gte.${startIso}&created_at=lte.${endIso}&order=created_at.asc&limit=10000`, { headers });
                         if (res.ok) {
                             const data = await res.json();
                             if (Array.isArray(data) && data.length > 0) {
@@ -1351,7 +1357,7 @@
                             }
                         }
 
-                        res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?license_plate=eq.${encodeURIComponent(qk)}&order=created_at.asc&limit=300`, { headers });
+                        res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?license_plate=eq.${encodeURIComponent(qk)}&created_at=gte.${startIso}&created_at=lte.${endIso}&order=created_at.asc&limit=10000`, { headers });
                         if (res.ok) {
                             const data = await res.json();
                             if (Array.isArray(data) && data.length > 0) {
@@ -1359,7 +1365,7 @@
                             }
                         }
 
-                        res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?id=eq.${encodeURIComponent(qk)}&order=created_at.asc&limit=300`, { headers });
+                        res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?id=eq.${encodeURIComponent(qk)}&created_at=gte.${startIso}&created_at=lte.${endIso}&order=created_at.asc&limit=10000`, { headers });
                         if (res.ok) {
                             const data = await res.json();
                             if (Array.isArray(data) && data.length > 0) {
@@ -1429,9 +1435,9 @@
                 const locTables = ['location_history', 'telemetry_history'];
                 for (const tbl of locTables) {
                     try {
-                        let locRes = await fetch(`${cleanedUrl}/rest/v1/${tbl}?order=created_at.desc&limit=200`, { headers });
-                        if (!locRes.ok) locRes = await fetch(`${cleanedUrl}/rest/v1/${tbl}?order=timestamp.desc&limit=200`, { headers });
-                        if (!locRes.ok) locRes = await fetch(`${cleanedUrl}/rest/v1/${tbl}?limit=200`, { headers });
+                        let locRes = await fetch(`${cleanedUrl}/rest/v1/${tbl}?order=created_at.desc&limit=1000`, { headers });
+                        if (!locRes.ok) locRes = await fetch(`${cleanedUrl}/rest/v1/${tbl}?order=timestamp.desc&limit=1000`, { headers });
+                        if (!locRes.ok) locRes = await fetch(`${cleanedUrl}/rest/v1/${tbl}?limit=1000`, { headers });
                         
                         if (locRes.ok) {
                             const locList = await locRes.json();
@@ -1455,9 +1461,9 @@
                 // 3. Fetch latest active trip details from 'vehicle_usage_logs'
                 let latestUsageMap = {};
                 try {
-                    let usageRes = await fetch(`${cleanedUrl}/rest/v1/vehicle_usage_logs?order=created_at.desc&limit=100`, { headers });
-                    if (!usageRes.ok) usageRes = await fetch(`${cleanedUrl}/rest/v1/vehicle_usage_logs?order=timestamp.desc&limit=100`, { headers });
-                    if (!usageRes.ok) usageRes = await fetch(`${cleanedUrl}/rest/v1/vehicle_usage_logs?limit=100`, { headers });
+                    let usageRes = await fetch(`${cleanedUrl}/rest/v1/vehicle_usage_logs?order=created_at.desc&limit=500`, { headers });
+                    if (!usageRes.ok) usageRes = await fetch(`${cleanedUrl}/rest/v1/vehicle_usage_logs?order=timestamp.desc&limit=500`, { headers });
+                    if (!usageRes.ok) usageRes = await fetch(`${cleanedUrl}/rest/v1/vehicle_usage_logs?limit=500`, { headers });
                     
                     if (usageRes.ok) {
                         const usageList = await usageRes.json();
@@ -1518,12 +1524,28 @@
                         }
                     }
 
+                    // Check if we have an existing state in the global vehiclesData
+                    let oldV = null;
+                    if (window.vehiclesData && window.vehiclesData.length > 0) {
+                        oldV = window.vehiclesData.find(old => String(old.vehicle_id || old.id) === vId || cleanPlateKey(old.license_plate) === normPlate);
+                    }
+
                     if (liveLoc) {
                         if (liveLoc.latitude && Number(liveLoc.latitude) !== 0) v.latitude = Number(liveLoc.latitude);
                         if (liveLoc.longitude && Number(liveLoc.longitude) !== 0) v.longitude = Number(liveLoc.longitude);
                         if (liveLoc.speed_kmh !== undefined) v.speed_kmh = Number(liveLoc.speed_kmh);
                         if (liveLoc.status) v.status = liveLoc.status;
                         if (liveLoc.created_at) v.updated_at = liveLoc.created_at;
+                    } else if (oldV) {
+                        // Retain state from previous fetch cycle if no new live location
+                        if (oldV.latitude) v.latitude = oldV.latitude;
+                        if (oldV.longitude) v.longitude = oldV.longitude;
+                        if (oldV.speed_kmh !== undefined) v.speed_kmh = oldV.speed_kmh;
+                        if (oldV.status) v.status = oldV.status;
+                        if (oldV.updated_at) v.updated_at = oldV.updated_at;
+                        if (oldV.driver_name) v.driver_name = oldV.driver_name;
+                        if (oldV.office_name) v.office_name = oldV.office_name;
+                        if (oldV.province_group) v.province_group = oldV.province_group;
                     }
 
                     if (liveUsage) {
