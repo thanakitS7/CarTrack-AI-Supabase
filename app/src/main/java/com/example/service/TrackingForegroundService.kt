@@ -32,8 +32,8 @@ import kotlinx.coroutines.launch
 class TrackingForegroundService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private var locationManager: LocationManager? = null
-    private var locationListener: LocationListener? = null
+    private var fusedClient: com.google.android.gms.location.FusedLocationProviderClient? = null
+    private var locationCallback: com.google.android.gms.location.LocationCallback? = null
 
     private var lastSyncTimeMs = 0L
 
@@ -159,43 +159,33 @@ class TrackingForegroundService : Service() {
             return
         }
 
-        locationManager = getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+        // Use FusedLocationProviderClient instead of the raw GPS_PROVIDER/NETWORK_PROVIDER —
+        // the raw GPS provider can take a very long time (or never, indoors) to get a fix,
+        // which silently stopped this background sync from ever firing.
+        fusedClient = com.google.android.gms.location.LocationServices
+            .getFusedLocationProviderClient(this)
 
-        locationListener = object : LocationListener {
-            override fun onLocationChanged(location: Location) {
+        locationCallback = object : com.google.android.gms.location.LocationCallback() {
+            override fun onLocationResult(result: com.google.android.gms.location.LocationResult) {
+                val location = result.lastLocation ?: return
                 handleNewLocation(location)
             }
-
-            @Deprecated("Deprecated in Java")
-            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
-            override fun onProviderEnabled(provider: String) {}
-            override fun onProviderDisabled(provider: String) {}
-        }
-
-        val listener = locationListener ?: return
-
-        try {
-            if (locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true) {
-                locationManager?.requestLocationUpdates(
-                    LocationManager.GPS_PROVIDER,
-                    1000L,
-                    1f,
-                    listener
-                )
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
 
         try {
-            if (locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true) {
-                locationManager?.requestLocationUpdates(
-                    LocationManager.NETWORK_PROVIDER,
-                    2000L,
-                    3f,
-                    listener
-                )
-            }
+            val locationRequest = com.google.android.gms.location.LocationRequest.Builder(
+                com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY,
+                2000L
+            )
+                .setMinUpdateIntervalMillis(1000L)
+                .setWaitForAccurateLocation(false)
+                .build()
+
+            fusedClient?.requestLocationUpdates(
+                locationRequest,
+                locationCallback as com.google.android.gms.location.LocationCallback,
+                android.os.Looper.getMainLooper()
+            )
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -260,7 +250,7 @@ class TrackingForegroundService : Service() {
 
     private fun stopTrackingInternal() {
         try {
-            locationListener?.let { locationManager?.removeUpdates(it) }
+            locationCallback?.let { fusedClient?.removeLocationUpdates(it) }
         } catch (e: Exception) {
             e.printStackTrace()
         }
