@@ -42,6 +42,7 @@
             70% { box-shadow: 0 0 0 12px rgba(16, 185, 129, 0); }
             100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
         }
+        .leaflet-marker-icon { transition: transform 1.5s ease-out !important; }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100 flex flex-col h-screen overflow-hidden">
@@ -127,6 +128,16 @@
                         <span>ล้างค่า</span>
                     </button>
                 </div>
+                <!-- Status Filter -->
+                <div class="flex items-center space-x-1.5">
+                    <select id="statusFilter" onchange="filterVehicles()" class="w-full py-1.5 px-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-100 focus:outline-none focus:border-sky-500">
+                        <option value="ALL">รวมทุกสถานะ</option>
+                        <option value="MOVING">🚗 กำลังวิ่ง (Moving)</option>
+                        <option value="PARKED">🏁 ถึงเป้าหมาย (Parked)</option>
+                        <option value="IDLE">☕ จอดพัก (Idle)</option>
+                        <option value="OFFLINE">🔌 ออฟไลน์ (Offline)</option>
+                    </select>
+                </div>
 
                 <div class="flex items-center justify-between text-xs text-slate-400 px-1">
                     <span>รถทั้งหมด: <strong id="totalVehiclesCount" class="text-sky-400">0</strong> คัน</span>
@@ -141,7 +152,7 @@
                 <div class="flex items-center justify-between text-xs text-slate-400 px-1 pt-2 border-t border-slate-700/60">
                     <label class="flex items-center space-x-1.5 cursor-pointer text-slate-300 hover:text-white select-none">
                         <input type="checkbox" id="groupByProvinceToggle" onchange="toggleGroupByProvince(this.checked)" class="rounded bg-slate-900 border-slate-700 text-sky-500 focus:ring-sky-500 w-3.5 h-3.5">
-                        <span class="text-[11px] font-medium"><i class="fa-solid fa-folder-tree text-sky-400 mr-1"></i>จัดกลุ่มตามกลุ่มจังหวัด</span>
+                        <span class="text-[11px] font-medium"><i class="fa-solid fa-folder-tree text-sky-400 mr-1"></i>จัดกลุ่มตามที่ทำการ</span>
                     </label>
                     <span id="groupCountBadge" class="hidden text-[10px] text-sky-400 bg-sky-950 px-1.5 py-0.5 rounded border border-sky-800 font-mono">0 กลุ่ม</span>
                 </div>
@@ -1160,7 +1171,7 @@
             const vname = v.vehicle_name || v.name || v.vehiclename || v.v_name || vid || 'รถไม่มีชื่อ';
             const plate = v.license_plate || v.licenseplate || v.plate || '-';
             const driver = v.driver_name || v.drivername || v.driver || '-';
-            const office = v.office_name || v.officename || v.office || '-';
+            const office = v.workplace || v.office_name || v.officename || v.office || '-';
             const postal = v.postal_code || v.postalcode || v.zip_code || v.zipcode || v.postal || '-';
             const province = v.province_group || v.provincegroup || v.province || v.province_name || '-';
 
@@ -1435,8 +1446,7 @@
                     <div class="grid grid-cols-2 gap-2 mt-2 text-[11px] text-slate-300 bg-slate-800/50 p-2 rounded-lg cursor-pointer" onclick="selectVehicle('${v.vehicle_id}')">
                         <div><i class="fa-solid fa-gauge text-amber-400 mr-1"></i>ความเร็ว: <strong class="text-white">${v.speed_kmh || 0} km/h</strong></div>
                         <div><i class="fa-solid fa-user-gear text-indigo-400 mr-1"></i>คนขับ: <span class="text-slate-200">${v.driver_name || '-'}</span></div>
-                        <div><i class="fa-solid fa-building text-emerald-400 mr-1"></i>ที่ทำการ: <span class="text-slate-200">${v.office_name || '-'}</span></div>
-                        <div><i class="fa-solid fa-map-location-dot text-indigo-400 mr-1"></i>กลุ่ม ปจ.: <span class="text-slate-200">${v.province_group || '-'}</span></div>
+                        <div class="col-span-2"><i class="fa-solid fa-building text-emerald-400 mr-1"></i>ที่ทำการ: <span class="text-slate-200">${v.office_name || '-'}</span></div>
                         <div class="col-span-2 text-sky-400 font-medium pt-0.5 border-t border-slate-700/50">
                             <i class="fa-solid fa-route text-sky-400 mr-1"></i>ระยะทางวันนี้: <strong class="text-white">${distanceKm} กม.</strong>
                         </div>
@@ -1458,14 +1468,27 @@
         function updateUI(vehicles) {
             const listEl = document.getElementById("vehicleList");
             const searchVal = document.getElementById("searchInput").value.toLowerCase();
+            const statusFilter = document.getElementById("statusFilter") ? document.getElementById("statusFilter").value : "ALL";
 
-            const filtered = vehicles.filter(v => 
+            let filtered = vehicles.filter(v => 
                 (v.vehicle_name || '').toLowerCase().includes(searchVal) ||
                 (v.license_plate || '').toLowerCase().includes(searchVal) ||
                 (v.driver_name || '').toLowerCase().includes(searchVal) ||
                 (v.province_group || '').toLowerCase().includes(searchVal) ||
                 (v.office_name || '').toLowerCase().includes(searchVal)
             );
+
+            if (statusFilter !== "ALL") {
+                filtered = filtered.filter(v => getVehicleStatus(v) === statusFilter);
+            }
+
+            // Sort vehicles: MOVING first, then IDLE, PARKED, OFFLINE
+            const statusPriority = { "MOVING": 1, "IDLE": 2, "PARKED": 3, "OFFLINE": 4 };
+            filtered.sort((a, b) => {
+                const sA = statusPriority[getVehicleStatus(a)] || 99;
+                const sB = statusPriority[getVehicleStatus(b)] || 99;
+                return sA - sB;
+            });
 
             document.getElementById("totalVehiclesCount").innerText = vehicles.length;
             const mobCountEl = document.getElementById("mobileTotalCount");
@@ -1492,10 +1515,10 @@
             if (!isGroupedByProvince) {
                 listEl.innerHTML = filtered.map(v => renderVehicleCardHTML(v)).join('');
             } else {
-                // Group vehicles by province_group
+                // Group vehicles by office_name (workplace)
                 const groups = {};
                 filtered.forEach(v => {
-                    const gName = (v.province_group || 'อื่นๆ / ไม่ระบุกลุ่ม').trim();
+                    const gName = (v.office_name && v.office_name !== '-' ? v.office_name : 'อื่นๆ / ไม่ระบุที่ทำการ').trim();
                     if (!groups[gName]) groups[gName] = [];
                     groups[gName].push(v);
                 });
@@ -2272,9 +2295,9 @@
 
         function clearSearch() {
             const input = document.getElementById("searchInput");
-            if (input) {
-                input.value = "";
-            }
+            if (input) input.value = "";
+            const statusSelect = document.getElementById("statusFilter");
+            if (statusSelect) statusSelect.value = "ALL";
             filterVehicles();
         }
 
