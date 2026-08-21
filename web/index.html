@@ -2008,21 +2008,30 @@
                 const headers = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
 
                 let historyRecords = [];
-                const res = await fetch(`${cleanedUrl}/rest/v1/location_history?created_at=gte.${startIso}&created_at=lte.${endIso}&order=created_at.asc&limit=10000`, { headers, cache: 'no-store' });
-                if (res.ok) {
+                let offset = 0;
+                const pageSize = 1000;
+                while (true) {
+                    const res = await fetch(`${cleanedUrl}/rest/v1/location_history?created_at=gte.${startIso}&created_at=lte.${endIso}&order=created_at.asc&limit=${pageSize}&offset=${offset}`, { headers, cache: 'no-store' });
+                    if (!res.ok) break;
                     const data = await res.json();
-                    if (Array.isArray(data)) {
-                        historyRecords = data.map(p => normalizeHistoryPoint(p));
-                    }
+                    if (!Array.isArray(data) || data.length === 0) break;
+                    historyRecords.push(...data.map(p => normalizeHistoryPoint(p)));
+                    if (data.length < pageSize) break;
+                    offset += pageSize;
                 }
 
                 // Fetch vehicle usage logs to know exact users who operated the vehicle
                 let usageLogs = [];
                 try {
-                    const uRes = await fetch(`${cleanedUrl}/rest/v1/vehicle_usage_logs?created_at=gte.${startIso}&created_at=lte.${endIso}&order=created_at.asc&limit=2000`, { headers, cache: 'no-store' });
-                    if (uRes.ok) {
+                    let uOffset = 0;
+                    while (true) {
+                        const uRes = await fetch(`${cleanedUrl}/rest/v1/vehicle_usage_logs?created_at=gte.${startIso}&created_at=lte.${endIso}&order=created_at.asc&limit=${pageSize}&offset=${uOffset}`, { headers, cache: 'no-store' });
+                        if (!uRes.ok) break;
                         const uData = await uRes.json();
-                        if (Array.isArray(uData)) usageLogs = uData;
+                        if (!Array.isArray(uData) || uData.length === 0) break;
+                        usageLogs.push(...uData);
+                        if (uData.length < pageSize) break;
+                        uOffset += pageSize;
                     }
                 } catch(e) {}
 
