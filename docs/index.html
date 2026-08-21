@@ -856,9 +856,12 @@
             if (map) map.invalidateSize();
         });
 
+        // --- Precise Thailand Timezone (UTC+7 / Asia/Bangkok) Utilities ---
         function parseTimestampMs(timeVal) {
             if (!timeVal) return 0;
-            if (typeof timeVal === 'number') return timeVal;
+            if (typeof timeVal === 'number') {
+                return timeVal < 10000000000 ? timeVal * 1000 : timeVal;
+            }
             let s = String(timeVal).trim();
             if (!s) return 0;
             if (/^\d{10,13}$/.test(s)) {
@@ -868,11 +871,49 @@
             if (s.includes(' ') && !s.includes('T')) {
                 s = s.replace(' ', 'T');
             }
+            // Supabase default now() and timestamps are UTC. If no offset/Z is provided, assume UTC.
             if (s.includes('T') && !s.endsWith('Z') && !s.match(/[+-]\d{2}(:\d{2})?$/)) {
                 s += 'Z';
             }
             const t = new Date(s).getTime();
             return isNaN(t) ? 0 : t;
+        }
+
+        function formatThaiTime(timeVal, includeSeconds = true) {
+            const ms = parseTimestampMs(timeVal);
+            if (!ms) return includeSeconds ? "--:--:--" : "--:--";
+            const d = new Date(ms);
+            return d.toLocaleTimeString('th-TH', {
+                timeZone: 'Asia/Bangkok',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: includeSeconds ? '2-digit' : undefined,
+                hour12: false
+            });
+        }
+
+        function formatThaiDateTime(timeVal) {
+            const ms = parseTimestampMs(timeVal);
+            if (!ms) return "-";
+            const d = new Date(ms);
+            return d.toLocaleString('th-TH', {
+                timeZone: 'Asia/Bangkok',
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            });
+        }
+
+        function getThaiCurrentDateString() {
+            return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+        }
+
+        function getThaiCurrentMonthString() {
+            return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit' }).format(new Date()).substring(0, 7);
         }
 
         function isVehicleInactive(v) {
@@ -1387,7 +1428,7 @@
                 updateUI(vehiclesData);
 
                 const lastUpdatedEl = document.getElementById("lastUpdated");
-                if (lastUpdatedEl) lastUpdatedEl.innerText = new Date().toLocaleTimeString('th-TH');
+                if (lastUpdatedEl) lastUpdatedEl.innerText = formatThaiTime(new Date(), true);
 
                 // Resolve place names asynchronously in background
                 for (const v of vehiclesData) {
@@ -1752,8 +1793,8 @@
 
             const totalKm = calculateTodayDistanceKm(points);
             const maxSpd = Math.max(...points.map(p => p.speed_kmh || 0));
-            const startTime = points[0].created_at ? new Date(points[0].created_at).toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'}) : '--:--';
-            const endTime = points[points.length-1].created_at ? new Date(points[points.length-1].created_at).toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'}) : '--:--';
+            const startTime = points[0] ? formatThaiTime(points[0].created_at || points[0].timestamp, false) : '--:--';
+            const endTime = points[points.length-1] ? formatThaiTime(points[points.length-1].created_at || points[points.length-1].timestamp, false) : '--:--';
 
             document.getElementById("histTotalKm").innerText = `${totalKm.toFixed(1)} กม.`;
             document.getElementById("histMaxSpeed").innerText = `${maxSpd} km/h`;
@@ -1766,7 +1807,7 @@
 
             // Render History Table
             tableBody.innerHTML = points.slice().reverse().map((p, idx) => {
-                const timeStr = p.created_at ? new Date(p.created_at).toLocaleTimeString('th-TH') : '--:--:--';
+                const timeStr = formatThaiTime(p.created_at || p.timestamp, true);
                 const isMoving = (p.status || '').includes("MOVING") || (p.speed_kmh || 0) > 3;
                 const statusBadge = isMoving ? `<span class="text-emerald-400 font-semibold">MOVING</span>` : `<span class="text-amber-400 font-semibold">IDLE</span>`;
                 const pName = placeNameCache[`${p.latitude.toFixed(3)},${p.longitude.toFixed(3)}`] || `${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}`;
@@ -1799,7 +1840,7 @@
 
             const point = currentHistoryPoints[currentHistoryIndex];
             document.getElementById("playbackSlider").value = currentHistoryIndex;
-            document.getElementById("playbackCurrentTime").innerText = point.created_at ? new Date(point.created_at).toLocaleTimeString('th-TH') : '--:--:--';
+            document.getElementById("playbackCurrentTime").innerText = formatThaiTime(point.created_at || point.timestamp, true);
 
             const place = placeNameCache[`${point.latitude.toFixed(3)},${point.longitude.toFixed(3)}`] || `${point.latitude.toFixed(4)}, ${point.longitude.toFixed(4)}`;
             document.getElementById("playbackLocationText").innerHTML = `<span class="text-slate-200">${place}</span> <span class="text-amber-400 font-bold ml-1">(${point.speed_kmh || 0} km/h)</span>`;
@@ -1890,16 +1931,14 @@
                 const monthInput = document.getElementById("reportMonthInput");
                 if (monthInput && !monthInput.value) {
                     const now = new Date();
-                    const yyyy = now.getFullYear();
-                    const mm = String(now.getMonth() + 1).padStart(2, '0');
-                    monthInput.value = `${yyyy}-${mm}`;
+                    monthInput.value = getThaiCurrentMonthString();
                 }
             } else {
                 if (monthlyContainer) monthlyContainer.classList.add("hidden");
                 if (dailyContainer) dailyContainer.classList.remove("hidden");
                 const dateInput = document.getElementById("reportDateInput");
                 if (dateInput && !dateInput.value) {
-                    dateInput.value = new Date().toISOString().split('T')[0];
+                    dateInput.value = getThaiCurrentDateString();
                 }
             }
             fetchDailyReportData();
@@ -1910,7 +1949,7 @@
             const monthInput = document.getElementById("reportMonthInput");
             const now = new Date();
             if (dateInput && !dateInput.value) {
-                dateInput.value = now.toISOString().split('T')[0];
+                dateInput.value = getThaiCurrentDateString();
             }
             if (monthInput && !monthInput.value) {
                 const yyyy = now.getFullYear();
@@ -1948,16 +1987,16 @@
                 const month = parseInt(monthStr);
                 const lastDay = new Date(year, month, 0).getDate();
                 const monthPadded = String(month).padStart(2, '0');
-                startIso = `${yearStr}-${monthPadded}-01T00:00:00.000Z`;
-                endIso = `${yearStr}-${monthPadded}-${String(lastDay).padStart(2, '0')}T23:59:59.999Z`;
+                startIso = new Date(`${yearStr}-${monthPadded}-01T00:00:00+07:00`).toISOString();
+                endIso = new Date(`${yearStr}-${monthPadded}-${String(lastDay).padStart(2, '0')}T23:59:59.999+07:00`).toISOString();
 
                 const monthNames = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
                 displayLabel = `เดือน${monthNames[month - 1]} ${year + 543} (${monthVal})`;
             } else {
                 const selectedDate = document.getElementById("reportDateInput").value;
                 if (!selectedDate) return;
-                startIso = `${selectedDate}T00:00:00.000Z`;
-                endIso = `${selectedDate}T23:59:59.999Z`;
+                startIso = new Date(`${selectedDate}T00:00:00+07:00`).toISOString();
+                endIso = new Date(`${selectedDate}T23:59:59.999+07:00`).toISOString();
                 displayLabel = `วันที่ ${selectedDate}`;
             }
 
@@ -2239,7 +2278,7 @@
             if (searchType === "monthly") {
                 dateLabel = document.getElementById("reportMonthInput").value || "Monthly";
             } else {
-                dateLabel = document.getElementById("reportDateInput").value || new Date().toISOString().split('T')[0];
+                dateLabel = document.getElementById("reportDateInput").value || getThaiCurrentDateString();
             }
 
             const filterProv = document.getElementById("reportProvinceFilter").value;
