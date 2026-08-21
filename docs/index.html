@@ -1108,7 +1108,6 @@
         }
 
         // --- Reverse Geocoding Cache ---
-        let placeNameCache = {};
         async function getPlaceName(lat, lng) {
             if (!lat || !lng) return "-";
             const key = `${lat.toFixed(3)},${lng.toFixed(3)}`;
