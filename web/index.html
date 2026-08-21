@@ -847,14 +847,18 @@
 
         function isVehicleInactive(v) {
             if (!v) return true;
-            const timeVal = v.updated_at || v.created_at || v.timestamp || v.last_updated || v.lastUpdateMillis || v.last_update_millis;
+            let timeVal = v.updated_at || v.created_at || v.timestamp || v.last_updated || v.lastUpdateMillis || v.last_update_millis;
             if (!timeVal) return false;
 
             let lastTimeMs = 0;
             if (typeof timeVal === 'number') {
                 lastTimeMs = timeVal;
             } else {
-                lastTimeMs = new Date(timeVal).getTime();
+                let timeStr = String(timeVal);
+                if (timeStr.includes('T') && !timeStr.endsWith('Z') && !timeStr.match(/[+-]\d{2}:\d{2}$/)) {
+                    timeStr += 'Z';
+                }
+                lastTimeMs = new Date(timeStr).getTime();
             }
 
             if (isNaN(lastTimeMs) || lastTimeMs <= 0) return false;
@@ -865,14 +869,20 @@
 
         function isVehicleOffline(v) {
             if (!v) return true;
-            const timeVal = v.updated_at || v.created_at || v.timestamp || v.last_updated || v.lastUpdateMillis || v.last_update_millis;
+            let timeVal = v.updated_at || v.created_at || v.timestamp || v.last_updated || v.lastUpdateMillis || v.last_update_millis;
             if (!timeVal) return false;
 
             let lastTimeMs = 0;
             if (typeof timeVal === 'number') {
                 lastTimeMs = timeVal;
             } else {
-                lastTimeMs = new Date(timeVal).getTime();
+                // Supabase might return UTC timestamps without a timezone identifier (e.g. "2026-08-20T13:38:17")
+                // If it doesn't end with Z and doesn't contain a timezone offset (+/-), we append Z to treat it as UTC
+                let timeStr = String(timeVal);
+                if (timeStr.includes('T') && !timeStr.endsWith('Z') && !timeStr.match(/[+-]\d{2}:\d{2}$/)) {
+                    timeStr += 'Z';
+                }
+                lastTimeMs = new Date(timeStr).getTime();
             }
 
             if (isNaN(lastTimeMs) || lastTimeMs <= 0) return false;
@@ -1262,7 +1272,11 @@
             const timeField = v.updated_at || v.updatedat || v.last_updated || v.last_seen || v.created_at;
             if (timeField) {
                 try {
-                    const updateDate = new Date(timeField);
+                    let timeStr = String(timeField);
+                    if (timeStr.includes('T') && !timeStr.endsWith('Z') && !timeStr.match(/[+-]\d{2}:\d{2}$/)) {
+                        timeStr += 'Z';
+                    }
+                    const updateDate = new Date(timeStr);
                     const nowDate = new Date();
                     const isSameDate = (
                         updateDate.getFullYear() === nowDate.getFullYear() &&
@@ -1278,7 +1292,11 @@
                 // If it was updated in last 12 hours
                 if (timeField) {
                     try {
-                        const diffMs = Date.now() - new Date(timeField).getTime();
+                        let timeStr = String(timeField);
+                        if (timeStr.includes('T') && !timeStr.endsWith('Z') && !timeStr.match(/[+-]\d{2}:\d{2}$/)) {
+                            timeStr += 'Z';
+                        }
+                        const diffMs = Date.now() - new Date(timeStr).getTime();
                         if (diffMs < 12 * 60 * 60 * 1000) return true;
                     } catch (e) {}
                 }
@@ -1411,7 +1429,10 @@
                 const locTables = ['location_history', 'telemetry_history'];
                 for (const tbl of locTables) {
                     try {
-                        const locRes = await fetch(`${cleanedUrl}/rest/v1/${tbl}?order=created_at.desc&limit=100`, { headers });
+                        let locRes = await fetch(`${cleanedUrl}/rest/v1/${tbl}?order=created_at.desc&limit=200`, { headers });
+                        if (!locRes.ok) locRes = await fetch(`${cleanedUrl}/rest/v1/${tbl}?order=timestamp.desc&limit=200`, { headers });
+                        if (!locRes.ok) locRes = await fetch(`${cleanedUrl}/rest/v1/${tbl}?limit=200`, { headers });
+                        
                         if (locRes.ok) {
                             const locList = await locRes.json();
                             if (Array.isArray(locList)) {
@@ -1426,13 +1447,18 @@
                                 }
                             }
                         }
-                    } catch (e) {}
+                    } catch (e) {
+                        console.warn(`Fetch ${tbl} error:`, e);
+                    }
                 }
 
                 // 3. Fetch latest active trip details from 'vehicle_usage_logs'
                 let latestUsageMap = {};
                 try {
-                    const usageRes = await fetch(`${cleanedUrl}/rest/v1/vehicle_usage_logs?order=created_at.desc&limit=100`, { headers });
+                    let usageRes = await fetch(`${cleanedUrl}/rest/v1/vehicle_usage_logs?order=created_at.desc&limit=100`, { headers });
+                    if (!usageRes.ok) usageRes = await fetch(`${cleanedUrl}/rest/v1/vehicle_usage_logs?order=timestamp.desc&limit=100`, { headers });
+                    if (!usageRes.ok) usageRes = await fetch(`${cleanedUrl}/rest/v1/vehicle_usage_logs?limit=100`, { headers });
+                    
                     if (usageRes.ok) {
                         const usageList = await usageRes.json();
                         if (Array.isArray(usageList)) {
@@ -1447,7 +1473,9 @@
                             }
                         }
                     }
-                } catch (e) {}
+                } catch (e) {
+                    console.warn('Fetch vehicle_usage_logs error:', e);
+                }
 
                 // Helper function to normalize license plates for fuzzy matching (e.g. "ผมน-9529", "ผม - 9529 กทม", "9529" -> "9529")
                 const cleanPlateKey = (str) => {
