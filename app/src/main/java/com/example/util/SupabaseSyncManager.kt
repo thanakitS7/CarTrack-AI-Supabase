@@ -133,7 +133,7 @@ object SupabaseSyncManager {
 
             val payloadObj = JSONObject().apply {
                 put("id", locId)
-                put("vehicle_id", vehicleId)
+                val parsedId = vehicleId.replace("[^0-9]".toRegex(), "").toLongOrNull(); if (parsedId != null && vehicleId.matches("^[0-9]+$".toRegex())) put("vehicle_id", parsedId) else put("vehicle_id", vehicleId)
                 put("license_plate", licensePlate)
                 put("driver_name", driverName)
                 put("office_name", officeName)
@@ -240,7 +240,7 @@ object SupabaseSyncManager {
 
             val payloadObj = JSONObject().apply {
                 put("id", usageId)
-                put("vehicle_id", vehicleId)
+                val parsedId = vehicleId.replace("[^0-9]".toRegex(), "").toLongOrNull(); if (parsedId != null && vehicleId.matches("^[0-9]+$".toRegex())) put("vehicle_id", parsedId) else put("vehicle_id", vehicleId)
                 if (!userId.isNullOrBlank()) {
                     put("user_id", userId)
                 }
@@ -556,7 +556,7 @@ object SupabaseSyncManager {
         try {
             val payloadObj = JSONObject().apply {
                 put("id", logId)
-                put("vehicle_id", vehicleId)
+                val parsedId = vehicleId.replace("[^0-9]".toRegex(), "").toLongOrNull(); if (parsedId != null && vehicleId.matches("^[0-9]+$".toRegex())) put("vehicle_id", parsedId) else put("vehicle_id", vehicleId)
                 if (userId.isNotBlank()) put("user_id", userId)
                 put("license_plate", licensePlate)
                 put("driver_name", driverName)

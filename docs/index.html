@@ -119,7 +119,7 @@
                 <div class="flex items-center space-x-1.5">
                     <div class="relative flex-1">
                         <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
-                        <input type="text" id="searchInput" oninput="filterVehicles()" placeholder="ค้นหาชื่อรถ / ทะเบียน / ที่ทำการ..." 
+                        <input type="text" id="searchInput" oninput="filterVehicles()" placeholder="ค้นหาชื่อรถ / ทะเบียน / คนขับ..." 
                                class="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-100 focus:outline-none focus:border-sky-500 placeholder-slate-500">
                     </div>
                     <button onclick="clearSearch()" title="ล้างค่าการค้นหา" class="bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-slate-200 px-3 py-2 rounded-lg text-xs font-medium transition flex items-center space-x-1 shrink-0 border border-slate-600">
@@ -845,50 +845,43 @@
             if (map) map.invalidateSize();
         });
 
+        function parseTimestampMs(timeVal) {
+            if (!timeVal) return 0;
+            if (typeof timeVal === 'number') return timeVal;
+            let s = String(timeVal).trim();
+            if (!s) return 0;
+            if (/^\d{10,13}$/.test(s)) {
+                let n = Number(s);
+                return n < 10000000000 ? n * 1000 : n;
+            }
+            if (s.includes(' ') && !s.includes('T')) {
+                s = s.replace(' ', 'T');
+            }
+            if (s.includes('T') && !s.endsWith('Z') && !s.match(/[+-]\d{2}(:\d{2})?$/)) {
+                s += 'Z';
+            }
+            const t = new Date(s).getTime();
+            return isNaN(t) ? 0 : t;
+        }
+
         function isVehicleInactive(v) {
             if (!v) return true;
-            let timeVal = v.updated_at || v.created_at || v.timestamp || v.last_updated || v.lastUpdateMillis || v.last_update_millis;
+            const timeVal = v.updated_at || v.created_at || v.timestamp || v.last_updated || v.lastUpdateMillis || v.last_update_millis;
             if (!timeVal) return false;
-
-            let lastTimeMs = 0;
-            if (typeof timeVal === 'number') {
-                lastTimeMs = timeVal;
-            } else {
-                let timeStr = String(timeVal);
-                if (timeStr.includes('T') && !timeStr.endsWith('Z') && !timeStr.match(/[+-]\d{2}:\d{2}$/)) {
-                    timeStr += 'Z';
-                }
-                lastTimeMs = new Date(timeStr).getTime();
-            }
-
-            if (isNaN(lastTimeMs) || lastTimeMs <= 0) return false;
-
+            const lastTimeMs = parseTimestampMs(timeVal);
+            if (!lastTimeMs || lastTimeMs <= 0) return false;
             const diffMs = Date.now() - lastTimeMs;
-            return diffMs > 15 * 60 * 1000; // > 15 minutes without GPS updates
+            return diffMs > 15 * 60 * 1000; // > 15 minutes
         }
 
         function isVehicleOffline(v) {
             if (!v) return true;
-            let timeVal = v.updated_at || v.created_at || v.timestamp || v.last_updated || v.lastUpdateMillis || v.last_update_millis;
+            const timeVal = v.updated_at || v.created_at || v.timestamp || v.last_updated || v.lastUpdateMillis || v.last_update_millis;
             if (!timeVal) return false;
-
-            let lastTimeMs = 0;
-            if (typeof timeVal === 'number') {
-                lastTimeMs = timeVal;
-            } else {
-                // Supabase might return UTC timestamps without a timezone identifier (e.g. "2026-08-20T13:38:17")
-                // If it doesn't end with Z and doesn't contain a timezone offset (+/-), we append Z to treat it as UTC
-                let timeStr = String(timeVal);
-                if (timeStr.includes('T') && !timeStr.endsWith('Z') && !timeStr.match(/[+-]\d{2}:\d{2}$/)) {
-                    timeStr += 'Z';
-                }
-                lastTimeMs = new Date(timeStr).getTime();
-            }
-
-            if (isNaN(lastTimeMs) || lastTimeMs <= 0) return false;
-
+            const lastTimeMs = parseTimestampMs(timeVal);
+            if (!lastTimeMs || lastTimeMs <= 0) return false;
             const diffMs = Date.now() - lastTimeMs;
-            return diffMs > 30 * 60 * 1000; // > 30 minutes without update
+            return diffMs > 25 * 60 * 1000; // > 25 minutes without GPS update
         }
 
         function getVehicleStatus(v) {
@@ -910,7 +903,7 @@
                 return "MOVING";
             }
 
-            // Check if GPS has not sent updates for a very long time
+            // Check if GPS has not sent updates for a long time
             if (isVehicleOffline(v)) {
                 return "OFFLINE";
             }
@@ -920,30 +913,6 @@
             }
 
             return "IDLE";
-        }
-
-        function getDisplayDriverName(v) {
-            if (!v) return "-";
-            const st = getVehicleStatus(v);
-            const rawStatus = (v.status || '').toUpperCase();
-            const rawDriver = (v.driver_name || v.drivername || v.driver || '').trim();
-
-            // If dummy or default generic driver name
-            const isPlaceholderDriver = !rawDriver || rawDriver === '-' || rawDriver === 'นายสมชาย ผู้ขับขี่' || rawDriver === 'ผู้ใช้งานระบบ' || rawDriver === 'ยังไม่มีผู้ใช้งาน';
-
-            // If not active / idle / offline / completed and no driver is actively operating
-            if (st === "PARKED" || st === "IDLE" || st === "OFFLINE" || !rawStatus.includes("MOVING") && !rawStatus.includes("IN_PROGRESS")) {
-                if (isPlaceholderDriver) {
-                    return "- (ไม่มีคนใช้งาน)";
-                }
-                // If it's a real name but status is parked/completed
-                if (st === "PARKED") {
-                    return `${rawDriver} (เสร็จสิ้นภารกิจ)`;
-                }
-                return `${rawDriver} (จอดพัก)`;
-            }
-
-            return isPlaceholderDriver ? "- (ไม่มีคนใช้งาน)" : rawDriver;
         }
 
         function updateMobileTrackingCard() {
@@ -964,19 +933,17 @@
             const st = getVehicleStatus(v);
             let statusBadge = "";
             if (st === "OFFLINE") {
-                statusBadge = `<span class="bg-rose-950/80 text-rose-300 border border-rose-700/80 px-2 py-0.5 rounded-full font-bold text-[10px]"><i class="fa-solid fa-parking mr-1 text-rose-400"></i>จอดพัก (GPS ดับ / ออฟไลน์)</span>`;
+                statusBadge = `<span class="bg-rose-950/80 text-rose-300 border border-rose-700/80 px-2 py-0.5 rounded-full font-bold text-[10px]"><i class="fa-solid fa-wifi-slash mr-1 text-rose-400"></i>OFFLINE (ขาดเชื่อมต่อ)</span>`;
             } else if (st === "PARKED") {
-                statusBadge = `<span class="bg-sky-950/90 text-sky-300 border border-sky-700/80 px-2 py-0.5 rounded-full font-bold text-[10px]"><i class="fa-solid fa-flag-checkered mr-1 text-sky-400"></i>🏁 ถึงที่หมายแล้ว</span>`;
+                statusBadge = `<span class="bg-sky-950/90 text-sky-300 border border-sky-700/80 px-2 py-0.5 rounded-full font-bold text-[10px]"><i class="fa-solid fa-flag-checkered mr-1 text-sky-400"></i>🏁 ถึงเป้าหมายแล้ว</span>`;
             } else if (st === "MOVING") {
                 statusBadge = `<span class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold text-[10px] animate-pulse"><i class="fa-solid fa-circle text-[6px] mr-1"></i>วิ่งอยู่ ${v.speed_kmh || 0} km/h</span>`;
             } else {
-                statusBadge = `<span class="bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold text-[10px]"><i class="fa-solid fa-parking mr-1"></i>จอดพัก (IDLE)</span>`;
+                statusBadge = `<span class="bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold text-[10px]"><i class="fa-solid fa-parking mr-1"></i>จอดพัก / IDLE</span>`;
             }
 
             const distanceKm = (vehicleDistancesKm[v.vehicle_id] || 0.0).toFixed(1);
             const placeName = vehicleLocationNames[v.vehicle_id] || `พิกัด ${(v.latitude || 0).toFixed(4)}, ${(v.longitude || 0).toFixed(4)}`;
-            const driverDisplay = getDisplayDriverName(v);
-            const hasActiveDriver = !driverDisplay.includes("ไม่มีคนใช้งาน");
 
             card.innerHTML = `
                 <div class="flex items-center justify-between pb-1.5 border-b border-slate-800">
@@ -986,9 +953,7 @@
                         </div>
                         <div class="truncate">
                             <h4 class="font-bold text-white text-xs truncate">${v.vehicle_name || v.vehicle_id} <span class="text-[10px] text-slate-400">(${v.license_plate || '-'})</span></h4>
-                            <p class="text-[10px] text-slate-400 truncate">
-                                <span class="${hasActiveDriver ? 'text-sky-300 font-medium' : 'text-slate-500'}">คนขับ: ${hasActiveDriver ? driverDisplay : 'ไม่มีผู้ใช้งาน'}</span> • ${v.office_name || v.province_group || ''}
-                            </p>
+                            <p class="text-[10px] text-slate-400 truncate">คนขับ: ${v.driver_name || '-'} • ${v.office_name || v.province_group || ''}</p>
                         </div>
                     </div>
                     <div class="flex items-center space-x-1 shrink-0">
@@ -996,7 +961,6 @@
                         <button onclick="deselectVehicle()" class="text-slate-400 hover:text-white p-1 ml-1 text-sm" title="ปิด"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                 </div>
-
                 <div class="flex items-center justify-between text-[11px] text-slate-300">
                     <div class="truncate pr-2" title="${placeName}">
                         <i class="fa-solid fa-location-dot text-rose-400 mr-1"></i>
@@ -1006,7 +970,6 @@
                         <i class="fa-solid fa-route mr-1"></i>${distanceKm} กม.
                     </div>
                 </div>
-
                 <div class="grid grid-cols-3 gap-1.5 pt-1">
                     <button onclick="toggleAutoFollow(!isAutoFollowEnabled)" class="py-1.5 px-2 ${isAutoFollowEnabled ? 'bg-sky-600 text-white font-bold' : 'bg-slate-800 text-sky-400 border border-slate-700'} hover:bg-sky-500 hover:text-white rounded-lg text-[10px] transition flex items-center justify-center space-x-1">
                         <i class="fa-solid fa-crosshairs"></i>
@@ -1022,7 +985,6 @@
                     </button>
                 </div>
             `;
-
             card.classList.remove("hidden");
         }
 
@@ -1082,7 +1044,6 @@
         function fitMapBoundsAllVehicles() {
             const searchInput = document.getElementById("searchInput");
             const searchVal = searchInput ? searchInput.value.toLowerCase() : "";
-
             let targetVehicles = vehiclesData;
             if (searchVal) {
                 targetVehicles = targetVehicles.filter(v => 
@@ -1093,7 +1054,6 @@
                     (v.office_name || '').toLowerCase().includes(searchVal)
                 );
             }
-
             const validCoords = targetVehicles
                 .filter(v => v.latitude && v.longitude)
                 .map(v => [v.latitude, v.longitude]);
@@ -1133,55 +1093,41 @@
 
         function calculateTodayDistanceKm(points) {
             if (!points || points.length < 2) return 0.0;
-            let totalKm = 0.0;
-            for (let i = 1; i < points.length; i++) {
-                const p1 = points[i - 1];
-                const p2 = points[i];
+            let total = 0;
+            for (let i = 0; i < points.length - 1; i++) {
+                const p1 = points[i];
+                const p2 = points[i + 1];
                 if (p1.latitude && p1.longitude && p2.latitude && p2.longitude) {
                     const dist = getDistanceFromLatLonInKm(p1.latitude, p1.longitude, p2.latitude, p2.longitude);
-                    if (dist < 50) { // filter out GPS jitter glitches
-                        totalKm += dist;
+                    if (!isNaN(dist) && dist > 0.005 && dist < 5.0) { // filter noise & jumps
+                        total += dist;
                     }
                 }
             }
-            return totalKm;
+            return total;
         }
 
-        // --- Reverse Geocoding for Place Names ---
+        // --- Reverse Geocoding Cache ---
+        let placeNameCache = {};
         async function getPlaceName(lat, lng) {
-            if (!lat || !lng) return "ไม่ระบุตำแหน่ง";
+            if (!lat || !lng) return "-";
             const key = `${lat.toFixed(3)},${lng.toFixed(3)}`;
             if (placeNameCache[key]) return placeNameCache[key];
 
             try {
-                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14&addressdetails=1`);
+                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16&addressdetails=1`, {
+                    headers: { 'Accept-Language': 'th,en' }
+                });
                 if (res.ok) {
                     const data = await res.json();
                     const addr = data.address || {};
-                    const place = addr.suburb || addr.town || addr.city || addr.district || addr.county || addr.state || data.display_name.split(',')[0];
-                    const province = addr.state || addr.province || '';
-                    const result = province && !place.includes(province) ? `${place}, ${province}` : place;
-                    placeNameCache[key] = result;
-                    return result;
+                    const name = addr.village || addr.subdistrict || addr.district || addr.city || addr.state || data.display_name.split(',')[0] || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+                    placeNameCache[key] = name;
+                    return name;
                 }
-            } catch (e) {
-                console.warn("Reverse geocode error:", e);
-            }
-            const fallback = `พิกัด ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-            placeNameCache[key] = fallback;
-            return fallback;
+            } catch (e) {}
+            return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
         }
-
-        // --- Supabase Live Vehicles Baseline ---
-        const DEFAULT_SAMPLE_VEHICLES = [
-            { id: "V001", vehicle_id: "V001", vehicle_name: "รถบรรทุกตู้ใหญ่ 6 ล้อ (ขนส่งด่วนขอนแก่น-กรุงเทพฯ)", name: "รถบรรทุกตู้ใหญ่ 6 ล้อ (ขนส่งด่วนขอนแก่น-กรุงเทพฯ)", license_plate: "83-4521 ขก", licenseplate: "83-4521 ขก", modelyear: "2024", driver_name: "นายสมชาย ผู้ขับขี่", drivername: "นายสมชาย ผู้ขับขี่", office_name: "ปณ.เมืองขอนแก่น", officename: "ปณ.เมืองขอนแก่น", province_group: "ขอนแก่น (ขก)", provincegroup: "ขอนแก่น (ขก)", latitude: 16.44424086, longitude: 102.79357396, speed_kmh: 68, status: "IDLE", is_active: true, fuel_percent: 88, fuelpercent: 88, battery_voltage: 24.2, battery: 24.2 },
-            { id: "V002", vehicle_id: "V002", vehicle_name: "รถตู้ส่งพัสดุด่วน EMS ปณ.ขอนแก่น #1", name: "รถตู้ส่งพัสดุด่วน EMS ปณ.ขอนแก่น #1", license_plate: "ผก-9812 ขก", licenseplate: "ผก-9812 ขก", modelyear: "2024", driver_name: "อามเอง", drivername: "อามเอง", office_name: "ปณ.ขอนแก่น", officename: "ปณ.ขอนแก่น", province_group: "ขอนแก่น (ขก)", provincegroup: "ขอนแก่น (ขก)", latitude: 16.4442308, longitude: 102.8300232, speed_kmh: 0, status: "MOVING", is_active: true, fuel_percent: 95, fuelpercent: 95, battery_voltage: 12.8, battery: 12.8 },
-            { id: "V003", vehicle_id: "V003", vehicle_name: "รถกระบะขนส่งตู้ทึบ ปณ.เมืองขอนแก่น #2", name: "รถกระบะขนส่งตู้ทึบ ปณ.เมืองขอนแก่น #2", license_plate: "1ตท-3341 ขก", licenseplate: "1ตท-3341 ขก", modelyear: "2024", driver_name: "นายสมชาย ผู้ขับขี่", drivername: "นายสมชาย ผู้ขับขี่", office_name: "ปณ.เมืองขอนแก่น", officename: "ปณ.เมืองขอนแก่น", province_group: "ขอนแก่น (ขก)", provincegroup: "ขอนแก่น (ขก)", latitude: 16.441, longitude: 102.836, speed_kmh: 42, status: "MOVING", is_active: true, fuel_percent: 74, fuelpercent: 74, battery_voltage: 12.7, battery: 12.7 },
-            { id: "V004", vehicle_id: "V004", vehicle_name: "รถบรรทุกเทรลเลอร์ 10 ล้อ ศูนย์ไปรษณีย์ขอนแก่น", name: "รถบรรทุกเทรลเลอร์ 10 ล้อ ศูนย์ไปรษณีย์ขอนแก่น", license_plate: "70-1122 ขก", licenseplate: "70-1122 ขก", modelyear: "2024", driver_name: "ธนกฤต เทิงสูงเนิน", drivername: "ธนกฤต เทิงสูงเนิน", office_name: "ศูนย์ไปรษณีย์ขอนแก่น", officename: "ศูนย์ไปรษณีย์ขอนแก่น", province_group: "ศูนย์ขอนแก่น (ศป)", provincegroup: "ศูนย์ขอนแก่น (ศป)", latitude: 16.4812, longitude: 102.818, speed_kmh: 72, status: "MOVING", is_active: true, fuel_percent: 82, fuelpercent: 82, battery_voltage: 24.5, battery: 24.5 },
-            { id: "V005", vehicle_id: "V005", vehicle_name: "รถกระบะส่งพัสดุ ปณ.น้ำพอง", name: "รถกระบะส่งพัสดุ ปณ.น้ำพอง", license_plate: "ผก-4411 ขก", licenseplate: "ผก-4411 ขก", modelyear: "2022", driver_name: "นายสมชาย ผู้ขับขี่", drivername: "นายสมชาย ผู้ขับขี่", office_name: "ปณ.น้ำพอง", officename: "ปณ.น้ำพอง", province_group: "ขอนแก่น (ขก)", provincegroup: "ขอนแก่น (ขก)", latitude: 16.821, longitude: 102.802, speed_kmh: 0, status: "STOPPED", is_active: true, fuel_percent: 65, fuelpercent: 65, battery_voltage: 12.5, battery: 12.5 },
-            { id: "V006", vehicle_id: "V006", vehicle_name: "รถตู้ส่งด่วน EMS ปณ.เมืองอุดรธานี", name: "รถตู้ส่งด่วน EMS ปณ.เมืองอุดรธานี", license_plate: "ผก-1234 อด", licenseplate: "ผก-1234 อด", modelyear: "2023", driver_name: "นายอุดร สายส่ง", drivername: "นายอุดร สายส่ง", office_name: "ปณ.เมืองอุดรธานี", officename: "ปณ.เมืองอุดรธานี", province_group: "อุดรธานี (อด)", provincegroup: "อุดรธานี (อด)", latitude: 17.4138, longitude: 102.7872, speed_kmh: 55, status: "MOVING", is_active: true, fuel_percent: 90, fuelpercent: 90, battery_voltage: 12.8, battery: 12.8 },
-            { id: "V119", vehicle_id: "V119", vehicle_name: "test 6 ล้อ", name: "test 6 ล้อ", license_plate: "Test-3030", licenseplate: "Test-3030", modelyear: "2024", driver_name: "ธนกฤต เทิงสูงเนิน", drivername: "ธนกฤต เทิงสูงเนิน", office_name: "ศูนย์ไปรษณีย์ขอนแก่น", officename: "ศูนย์ไปรษณีย์ขอนแก่น", province_group: "ศูนย์ขอนแก่น (ศป)", provincegroup: "ศูนย์ขอนแก่น (ศป)", latitude: 16.44418109, longitude: 102.79355781, speed_kmh: 0, status: "COMPLETED", is_active: true, fuel_percent: 100, fuelpercent: 100, battery_voltage: 12.5, battery: 12.5 }
-        ];
 
         function clearSystemCache() {
             if (confirm("คุณต้องการล้างแคชข้อมูลเก่าทั้งหมดในเบราว์เซอร์ เพื่อโหลดข้อมูลสดใหม่จากระบบเรียลไทม์หรือไม่?")) {
@@ -1205,11 +1151,8 @@
             const vname = v.vehicle_name || v.name || v.vehiclename || v.v_name || vid || 'รถไม่มีชื่อ';
             const plate = v.license_plate || v.licenseplate || v.plate || '-';
             const driver = v.driver_name || v.drivername || v.driver || '-';
-            const workplaceVal = (v.workplace !== undefined && v.workplace !== null && String(v.workplace).trim() !== '') 
-                ? String(v.workplace).trim() 
-                : ((v.office_name || v.officename || v.office || '').trim() || '-');
-            const office = workplaceVal;
-            const postal = v.postal_code || v.postalcode || v.post_id || v.postid || v.zip_code || v.zipcode || v.postal || '-';
+            const office = v.office_name || v.officename || v.office || '-';
+            const postal = v.postal_code || v.postalcode || v.zip_code || v.zipcode || v.postal || '-';
             const province = v.province_group || v.provincegroup || v.province || v.province_name || '-';
 
             let lat = 0.0;
@@ -1237,10 +1180,8 @@
             v.licenseplate = plate;
             v.driver_name = driver;
             v.drivername = driver;
-            v.workplace = workplaceVal;
             v.office_name = office;
             v.officename = office;
-            v.post_id = postal;
             v.postal_code = postal;
             v.postalcode = postal;
             v.province_group = province;
@@ -1251,58 +1192,8 @@
             v.currentlng = lng;
             v.speed_kmh = speed;
             v.speedkmh = speed;
-            v.updated_at = v.updated_at || v.updatedat || v.last_updated || v.created_at || null;
             v.is_active = v.is_active !== undefined ? v.is_active : true;
             return v;
-        }
-
-        // Check if vehicle was active today (used for filtering today's active vehicles in dashboard)
-        function isVehicleActiveToday(v) {
-            if (!v) return false;
-
-            // 1. If currently moving or parked/idle with positive speed or active status
-            const st = getVehicleStatus(v);
-            if (st === "MOVING" || (v.speed_kmh && v.speed_kmh > 0)) return true;
-
-            // 2. Check distance traveled today
-            const dist = vehicleDistancesKm[v.vehicle_id || v.id];
-            if (dist && dist > 0.05) return true;
-
-            // 3. Check updated_at or timestamp field for today's date
-            const timeField = v.updated_at || v.updatedat || v.last_updated || v.last_seen || v.created_at;
-            if (timeField) {
-                try {
-                    let timeStr = String(timeField);
-                    if (timeStr.includes('T') && !timeStr.endsWith('Z') && !timeStr.match(/[+-]\d{2}:\d{2}$/)) {
-                        timeStr += 'Z';
-                    }
-                    const updateDate = new Date(timeStr);
-                    const nowDate = new Date();
-                    const isSameDate = (
-                        updateDate.getFullYear() === nowDate.getFullYear() &&
-                        updateDate.getMonth() === nowDate.getMonth() &&
-                        updateDate.getDate() === nowDate.getDate()
-                    );
-                    if (isSameDate) return true;
-                } catch (e) {}
-            }
-
-            // 4. Check if vehicle has status of PARKED today or active
-            if (st === "PARKED" || st === "IDLE") {
-                // If it was updated in last 12 hours
-                if (timeField) {
-                    try {
-                        let timeStr = String(timeField);
-                        if (timeStr.includes('T') && !timeStr.endsWith('Z') && !timeStr.match(/[+-]\d{2}:\d{2}$/)) {
-                            timeStr += 'Z';
-                        }
-                        const diffMs = Date.now() - new Date(timeStr).getTime();
-                        if (diffMs < 12 * 60 * 60 * 1000) return true;
-                    } catch (e) {}
-                }
-            }
-
-            return false;
         }
 
         function normalizeHistoryPoint(p) {
@@ -1316,342 +1207,170 @@
             return p;
         }
 
-        async function fetchHistoryPointsForVehicle(vehicleIdentifier) {
-            if (!vehicleIdentifier) return [];
+        async function fetchHistoryPointsForVehicle(vehicleId) {
             const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
             const headers = { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` };
-
-            let vId = String(vehicleIdentifier);
-            let plateStr = '';
-            
-            // Check if vehicleIdentifier is an object or find vehicle in memory
-            const veh = vehiclesData.find(v => v.vehicle_id === vId || v.id === vId || v.license_plate === vId);
-            if (veh) {
-                vId = veh.vehicle_id;
-                plateStr = veh.license_plate;
-            }
-
-            const cleanPlateKey = (str) => {
-                if (!str) return '';
-                return String(str).replace(/[\s\-_]/g, '').trim().toLowerCase();
-            };
-
-            const queryKeys = [vId];
-            if (plateStr && !queryKeys.includes(plateStr)) queryKeys.push(plateStr);
-
-            const now = new Date();
-            const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-            const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-            const startIso = startOfDay.toISOString();
-            const endIso = endOfDay.toISOString();
-
-            const tables = ['location_history', 'vehicle_usage_logs'];
-            for (const tbl of tables) {
-                for (const qk of queryKeys) {
-                    try {
-                        let res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?vehicle_id=eq.${encodeURIComponent(qk)}&created_at=gte.${startIso}&created_at=lte.${endIso}&order=created_at.asc&limit=10000`, { headers });
-                        if (res.ok) {
-                            const data = await res.json();
-                            if (Array.isArray(data) && data.length > 0) {
-                                return data.map(p => normalizeHistoryPoint(p));
-                            }
-                        }
-
-                        res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?license_plate=eq.${encodeURIComponent(qk)}&created_at=gte.${startIso}&created_at=lte.${endIso}&order=created_at.asc&limit=10000`, { headers });
-                        if (res.ok) {
-                            const data = await res.json();
-                            if (Array.isArray(data) && data.length > 0) {
-                                return data.map(p => normalizeHistoryPoint(p));
-                            }
-                        }
-
-                        res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?id=eq.${encodeURIComponent(qk)}&created_at=gte.${startIso}&created_at=lte.${endIso}&order=created_at.asc&limit=10000`, { headers });
-                        if (res.ok) {
-                            const data = await res.json();
-                            if (Array.isArray(data) && data.length > 0) {
-                                return data.map(p => normalizeHistoryPoint(p));
-                            }
-                        }
-                    } catch (e) {
-                        console.warn(`Fetch history from ${tbl} error:`, e);
+            const cacheBuster = `&_t=${Date.now()}`;
+            try {
+                // Try matching by vehicle_id or license_plate
+                let res = await fetch(`${cleanedUrl}/rest/v1/location_history?vehicle_id=eq.${vehicleId}&order=created_at.asc&limit=300${cacheBuster}`, { headers });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (Array.isArray(data) && data.length > 0) {
+                        return data.map(p => normalizeHistoryPoint(p));
                     }
                 }
-            }
-
-            // Fallback: fetch last 100 rows and fuzzy match license plate
-            if (plateStr) {
-                const normTargetPlate = cleanPlateKey(plateStr);
-                for (const tbl of tables) {
-                    try {
-                        const res = await fetch(`${cleanedUrl}/rest/v1/${tbl}?order=created_at.asc&limit=200`, { headers });
-                        if (res.ok) {
-                            const data = await res.json();
-                            if (Array.isArray(data)) {
-                                const matched = data.filter(p => {
-                                    const pPlate = cleanPlateKey(p.license_plate || p.vehicle_id || '');
-                                    return pPlate === normTargetPlate || (normTargetPlate.length >= 4 && pPlate.includes(normTargetPlate.slice(-4)));
-                                });
-                                if (matched.length > 0) {
-                                    return matched.map(p => normalizeHistoryPoint(p));
-                                }
-                            }
-                        }
-                    } catch (e) {}
+                // Try fallback with telemetry_history
+                let res2 = await fetch(`${cleanedUrl}/rest/v1/telemetry_history?vehicle_id=eq.${vehicleId}&order=created_at.asc&limit=300${cacheBuster}`, { headers });
+                if (res2.ok) {
+                    const data2 = await res2.json();
+                    if (Array.isArray(data2) && data2.length > 0) {
+                        return data2.map(p => normalizeHistoryPoint(p));
+                    }
                 }
+            } catch (e) {
+                console.warn("Fetch location history error:", e);
             }
-
             return [];
         }
 
-        // --- Fetch Vehicles & Telemetry from Supabase ---
-        let isFetchingVehiclesData = false; // re-entrancy guard: see note below
+        // --- Fast Bulk Fetch Vehicles & Telemetry from Supabase ---
+        let isFetchingVehicles = false;
         async function fetchVehiclesData() {
-            // If a previous cycle is still running (e.g. because the per-vehicle history
-            // lookups are slow, or the vehicle list has grown large), skip this tick instead
-            // of starting an overlapping call on top of it. Without this guard, the 4-second
-            // setInterval kept firing new calls faster than old ones finished, and the pile-up
-            // of in-flight requests was what caused the page to get stuck on
-            // "กำลังโหลดข้อมูลรถจาก Supabase..." with thousands of console errors.
-            if (isFetchingVehiclesData) return;
-            isFetchingVehiclesData = true;
+            if (isFetchingVehicles) return;
+            isFetchingVehicles = true;
             try {
                 const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
                 const headers = {
                     'apikey': supabaseKey,
                     'Authorization': `Bearer ${supabaseKey}`
                 };
+                const cacheBuster = `&_t=${Date.now()}`;
 
-                // 1. Fetch registered vehicles from 'vehicles' table
-                let baseVehicles = [];
-                try {
-                    const res = await fetch(`${cleanedUrl}/rest/v1/vehicles?select=*`, { headers });
-                    if (res.ok) {
-                        const rawData = await res.json();
-                        if (Array.isArray(rawData) && rawData.length > 0) {
-                            baseVehicles = rawData.map(v => normalizeVehicle(v));
-                        }
+                // Parallel fetch vehicles, latest telemetry, and active usage logs
+                const [vehRes, locRes, usageRes] = await Promise.allSettled([
+                    fetch(`${cleanedUrl}/rest/v1/vehicles?select=*${cacheBuster}`, { headers }),
+                    fetch(`${cleanedUrl}/rest/v1/location_history?select=*&order=created_at.desc&limit=600${cacheBuster}`, { headers }),
+                    fetch(`${cleanedUrl}/rest/v1/vehicle_usage_logs?select=*&order=created_at.desc&limit=100${cacheBuster}`, { headers })
+                ]);
+
+                let rawVehicles = [];
+                if (vehRes.status === 'fulfilled' && vehRes.value.ok) {
+                    const data = await vehRes.value.json();
+                    if (Array.isArray(data) && data.length > 0) {
+                        rawVehicles = data;
                     }
-                } catch (e) {
-                    console.warn("Fetch vehicles error:", e);
                 }
 
-                if (baseVehicles.length === 0) {
-                    baseVehicles = DEFAULT_SAMPLE_VEHICLES.map(v => normalizeVehicle(v));
+                if (rawVehicles.length === 0) {
+                    if (!vehiclesData || vehiclesData.length === 0) {
+                        vehiclesData = DEFAULT_SAMPLE_VEHICLES.map(v => normalizeVehicle(v));
+                    }
+                } else {
+                    vehiclesData = rawVehicles.map(v => normalizeVehicle(v));
                 }
 
-                // 2. Fetch latest live locations from 'location_history'
-                // (NOTE: 'telemetry_history' was removed here — that table never existed in
-                // this project's actual Supabase schema, so every request to it was a guaranteed
-                // 404. Firing it on every vehicle, every 4-second refresh, was pure wasted
-                // network traffic and console-error noise for no benefit.)
-                let latestLocationsMap = {};
-                const locTables = ['location_history'];
-                for (const tbl of locTables) {
-                    try {
-                        let locRes = await fetch(`${cleanedUrl}/rest/v1/${tbl}?order=created_at.desc&limit=1000`, { headers });
-                        if (!locRes.ok) locRes = await fetch(`${cleanedUrl}/rest/v1/${tbl}?order=timestamp.desc&limit=1000`, { headers });
-                        if (!locRes.ok) locRes = await fetch(`${cleanedUrl}/rest/v1/${tbl}?limit=1000`, { headers });
-                        
-                        if (locRes.ok) {
-                            const locList = await locRes.json();
-                            if (Array.isArray(locList)) {
-                                for (const loc of locList) {
-                                    const vKey = String(loc.vehicle_id || loc.id || '');
-                                    if (vKey && !latestLocationsMap[vKey]) {
-                                        latestLocationsMap[vKey] = loc;
-                                    }
-                                    if (loc.license_plate && !latestLocationsMap[loc.license_plate]) {
-                                        latestLocationsMap[loc.license_plate] = loc;
-                                    }
+                // Process latest telemetry points into a lookup map by vehicle_id and plate
+                const latestTelemetryMap = {};
+                const vehicleHistoryPointsMap = {};
+
+                if (locRes.status === 'fulfilled' && locRes.value.ok) {
+                    const locData = await locRes.value.json();
+                    if (Array.isArray(locData)) {
+                        for (const p of locData) {
+                            const vKey = String(p.vehicle_id || p.vehicleid || p.license_plate || p.licenseplate || '').trim();
+                            if (vKey) {
+                                if (!latestTelemetryMap[vKey]) {
+                                    latestTelemetryMap[vKey] = p;
                                 }
-                            }
-                        }
-                    } catch (e) {
-                        console.warn(`Fetch ${tbl} error:`, e);
-                    }
-                }
-
-                // 3. Fetch latest active trip details from 'vehicle_usage_logs'
-                let latestUsageMap = {};
-                try {
-                    let usageRes = await fetch(`${cleanedUrl}/rest/v1/vehicle_usage_logs?order=created_at.desc&limit=500`, { headers });
-                    if (!usageRes.ok) usageRes = await fetch(`${cleanedUrl}/rest/v1/vehicle_usage_logs?order=timestamp.desc&limit=500`, { headers });
-                    if (!usageRes.ok) usageRes = await fetch(`${cleanedUrl}/rest/v1/vehicle_usage_logs?limit=500`, { headers });
-                    
-                    if (usageRes.ok) {
-                        const usageList = await usageRes.json();
-                        if (Array.isArray(usageList)) {
-                            for (const u of usageList) {
-                                const vKey = String(u.vehicle_id || '');
-                                if (vKey && !latestUsageMap[vKey]) {
-                                    latestUsageMap[vKey] = u;
+                                if (!vehicleHistoryPointsMap[vKey]) {
+                                    vehicleHistoryPointsMap[vKey] = [];
                                 }
-                                if (u.license_plate && !latestUsageMap[u.license_plate]) {
-                                    latestUsageMap[u.license_plate] = u;
-                                }
+                                vehicleHistoryPointsMap[vKey].push(normalizeHistoryPoint(p));
                             }
                         }
                     }
-                } catch (e) {
-                    console.warn('Fetch vehicle_usage_logs error:', e);
                 }
 
-                // Helper function to normalize license plates for fuzzy matching (e.g. "ผมน-9529", "ผม - 9529 กทม", "9529" -> "9529")
-                const cleanPlateKey = (str) => {
-                    if (!str) return '';
-                    return String(str).replace(/[\s\-_]/g, '').trim().toLowerCase();
-                };
-
-                // 4. Merge vehicles with live GPS coordinates, status, driver, and distance
-                vehiclesData = baseVehicles.map(v => {
-                    const vId = String(v.vehicle_id || v.id || '');
-                    const normPlate = cleanPlateKey(v.license_plate);
-
-                    // Find matching live location by vehicle ID or matching license plate
-                    let liveLoc = latestLocationsMap[vId] || latestLocationsMap[v.license_plate];
-                    if (!liveLoc && normPlate) {
-                        liveLoc = latestLocationsMap[normPlate];
-                    }
-                    if (!liveLoc && normPlate) {
-                        for (const [key, loc] of Object.entries(latestLocationsMap)) {
-                            const lPlate = cleanPlateKey(loc.license_plate || loc.vehicle_id || key);
-                            if (lPlate === normPlate || lPlate.includes(normPlate) || normPlate.includes(lPlate) || (normPlate.length >= 4 && lPlate.includes(normPlate.slice(-4)))) {
-                                liveLoc = loc;
-                                break;
+                // Process active usage logs into a lookup map
+                const activeUsageMap = {};
+                if (usageRes.status === 'fulfilled' && usageRes.value.ok) {
+                    const usageData = await usageRes.value.json();
+                    if (Array.isArray(usageData)) {
+                        for (const u of usageData) {
+                            const vKey = String(u.vehicle_id || u.vehicleid || u.license_plate || '').trim();
+                            if (vKey && !activeUsageMap[vKey]) {
+                                activeUsageMap[vKey] = u;
                             }
                         }
                     }
-
-                    // Find matching live usage log
-                    let liveUsage = latestUsageMap[vId] || latestUsageMap[v.license_plate];
-                    if (!liveUsage && normPlate) {
-                        liveUsage = latestUsageMap[normPlate];
-                    }
-                    if (!liveUsage && normPlate) {
-                        for (const [key, u] of Object.entries(latestUsageMap)) {
-                            const uPlate = cleanPlateKey(u.license_plate || u.vehicle_id || key);
-                            if (uPlate === normPlate || uPlate.includes(normPlate) || normPlate.includes(uPlate) || (normPlate.length >= 4 && uPlate.includes(normPlate.slice(-4)))) {
-                                liveUsage = u;
-                                break;
-                            }
-                        }
-                    }
-
-                    // Check if we have an existing state in the global vehiclesData
-                    let oldV = null;
-                    if (window.vehiclesData && window.vehiclesData.length > 0) {
-                        oldV = window.vehiclesData.find(old => String(old.vehicle_id || old.id) === vId || cleanPlateKey(old.license_plate) === normPlate);
-                    }
-
-                    if (liveLoc) {
-                        if (liveLoc.latitude && Number(liveLoc.latitude) !== 0) v.latitude = Number(liveLoc.latitude);
-                        if (liveLoc.longitude && Number(liveLoc.longitude) !== 0) v.longitude = Number(liveLoc.longitude);
-                        if (liveLoc.speed_kmh !== undefined) v.speed_kmh = Number(liveLoc.speed_kmh);
-                        if (liveLoc.status) v.status = liveLoc.status;
-                        if (liveLoc.created_at) v.updated_at = liveLoc.created_at;
-                    } else if (oldV) {
-                        // Retain state from previous fetch cycle if no new live location
-                        if (oldV.latitude) v.latitude = oldV.latitude;
-                        if (oldV.longitude) v.longitude = oldV.longitude;
-                        if (oldV.speed_kmh !== undefined) v.speed_kmh = oldV.speed_kmh;
-                        if (oldV.status) v.status = oldV.status;
-                        if (oldV.updated_at) v.updated_at = oldV.updated_at;
-                        if (oldV.driver_name) v.driver_name = oldV.driver_name;
-                        if (oldV.office_name) v.office_name = oldV.office_name;
-                        if (oldV.province_group) v.province_group = oldV.province_group;
-                    }
-
-                    if (liveUsage) {
-                        if (liveUsage.driver_name && liveUsage.driver_name.trim() !== '') v.driver_name = liveUsage.driver_name;
-                        if (liveUsage.office_name && liveUsage.office_name.trim() !== '') v.office_name = liveUsage.office_name;
-                        if (liveUsage.province_group && liveUsage.province_group.trim() !== '') v.province_group = liveUsage.province_group;
-                        if (liveUsage.status && (!v.status || v.status === 'STOPPED' || v.status === 'IDLE')) v.status = liveUsage.status;
-                        if ((!v.latitude || v.latitude === 0) && liveUsage.start_lat) v.latitude = liveUsage.start_lat;
-                        if ((!v.longitude || v.longitude === 0) && liveUsage.start_lng) v.longitude = liveUsage.start_lng;
-                    }
-
-                    return v;
-                });
-
-                // 5. Also dynamically include vehicles discovered in location_history or vehicle_usage_logs that may not be in 'vehicles' table
-                // Capped at MAX_PHANTOM_VEHICLES: every test run of the mobile app can generate a new
-                // local vehicle_id, so this list can otherwise grow without bound over time. Each entry
-                // here costs extra per-vehicle history lookups below, so an unbounded list is what was
-                // making every refresh cycle slower and slower until the page got stuck loading.
-                const MAX_PHANTOM_VEHICLES = 30;
-                const registeredPlates = new Set(vehiclesData.map(v => cleanPlateKey(v.license_plate)));
-
-                // Add from latestLocationsMap first
-                for (const [vKey, loc] of Object.entries(latestLocationsMap)) {
-                    if (vehiclesData.length >= MAX_PHANTOM_VEHICLES + Object.keys(baseVehicles).length) break;
-                    const locPlateKey = cleanPlateKey(loc.license_plate || vKey);
-                    if (!registeredPlates.has(locPlateKey) && vKey !== '') {
-                        const newVeh = normalizeVehicle({
-                            id: vKey,
-                            vehicle_id: vKey,
-                            vehicle_name: `รถ ${loc.license_plate || vKey}`,
-                            license_plate: loc.license_plate || '-',
-                            driver_name: loc.driver_name || '-',
-                            office_name: loc.office_name || '-',
-                            province_group: loc.province_group || '-',
-                            latitude: Number(loc.latitude) || 0.0,
-                            longitude: Number(loc.longitude) || 0.0,
-                            speed_kmh: Number(loc.speed_kmh) || 0,
-                            status: loc.status || 'MOVING',
-                            updated_at: loc.created_at || new Date().toISOString()
-                        });
-                        vehiclesData.push(newVeh);
-                        registeredPlates.add(locPlateKey);
-                    }
                 }
 
-                // Add from latestUsageMap
-                for (const [vKey, u] of Object.entries(latestUsageMap)) {
-                    if (vehiclesData.length >= MAX_PHANTOM_VEHICLES + Object.keys(baseVehicles).length) break;
-                    const uPlateKey = cleanPlateKey(u.license_plate || vKey);
-                    if (!registeredPlates.has(uPlateKey) && vKey !== '') {
-                        const newVeh = normalizeVehicle({
-                            id: vKey,
-                            vehicle_id: vKey,
-                            vehicle_name: `รถ ${u.license_plate || vKey}`,
-                            license_plate: u.license_plate || '-',
-                            driver_name: u.driver_name || '-',
-                            office_name: u.office_name || '-',
-                            province_group: u.province_group || '-',
-                            latitude: u.start_lat || 0.0,
-                            longitude: u.start_lng || 0.0,
-                            status: u.status || 'MOVING',
-                            updated_at: u.created_at || new Date().toISOString()
-                        });
-                        const liveLoc = latestLocationsMap[vKey];
-                        if (liveLoc) {
-                            if (liveLoc.latitude) newVeh.latitude = Number(liveLoc.latitude);
-                            if (liveLoc.longitude) newVeh.longitude = Number(liveLoc.longitude);
-                            if (liveLoc.speed_kmh !== undefined) newVeh.speed_kmh = Number(liveLoc.speed_kmh);
-                            if (liveLoc.status) newVeh.status = liveLoc.status;
-                            if (liveLoc.created_at) newVeh.updated_at = liveLoc.created_at;
-                        }
-                        vehiclesData.push(newVeh);
-                        registeredPlates.add(uPlateKey);
-                    }
-                }
-
-                // Fetch telemetry/location history for each vehicle to calculate distance and place names
+                // Merge live telemetry and usage status into vehiclesData
                 for (const v of vehiclesData) {
-                    if (v.vehicle_id) {
-                        try {
-                            const hist = await fetchHistoryPointsForVehicle(v.vehicle_id);
-                            if (hist && hist.length > 0) {
-                                vehicleDistancesKm[v.vehicle_id] = calculateTodayDistanceKm(hist);
-                                const lastPoint = hist[hist.length - 1];
-                                if (lastPoint && lastPoint.latitude && lastPoint.longitude) {
-                                    if (!v.latitude || v.latitude === 0) v.latitude = lastPoint.latitude;
-                                    if (!v.longitude || v.longitude === 0) v.longitude = lastPoint.longitude;
-                                }
-                            }
-                        } catch (e) {}
+                    const vid = String(v.vehicle_id || '').trim();
+                    const vPlate = String(v.license_plate || '').trim();
+                    const vPlateClean = vPlate.replace(/\s+/g, '');
+
+                    // Find matching telemetry point
+                    const telem = latestTelemetryMap[vid] || 
+                                  latestTelemetryMap[vPlate] || 
+                                  latestTelemetryMap[vPlateClean];
+
+                    if (telem) {
+                        const lat = Number(telem.latitude || telem.lat || 0);
+                        const lng = Number(telem.longitude || telem.lng || 0);
+                        if (lat !== 0 && lng !== 0) {
+                            v.latitude = lat;
+                            v.currentlat = lat;
+                            v.longitude = lng;
+                            v.currentlng = lng;
+                        }
+                        if (telem.speed_kmh !== undefined && telem.speed_kmh !== null) {
+                            v.speed_kmh = Number(telem.speed_kmh);
+                        }
+                        if (telem.status) {
+                            v.status = telem.status;
+                        }
+                        if (telem.created_at || telem.timestamp) {
+                            v.updated_at = telem.created_at || telem.timestamp;
+                        }
+                        if (telem.driver_name && (!v.driver_name || v.driver_name === '-')) {
+                            v.driver_name = telem.driver_name;
+                        }
                     }
 
+                    // Find matching usage log
+                    const usage = activeUsageMap[vid] || activeUsageMap[vPlate] || activeUsageMap[vPlateClean];
+                    if (usage) {
+                        if (usage.driver_name && (!v.driver_name || v.driver_name === '-')) {
+                            v.driver_name = usage.driver_name;
+                        }
+                        if (usage.status && (!v.status || v.status === 'IDLE' || v.status === 'STOPPED')) {
+                            v.status = usage.status;
+                        }
+                        if (usage.office_name && (!v.office_name || v.office_name === '-')) {
+                            v.office_name = usage.office_name;
+                        }
+                    }
+
+                    // Calculate distance from history points if available
+                    const hist = vehicleHistoryPointsMap[vid] || vehicleHistoryPointsMap[vPlate] || [];
+                    if (hist.length > 1) {
+                        // Reverse because history was sorted desc
+                        const sortedHist = [...hist].reverse();
+                        vehicleDistancesKm[v.vehicle_id] = calculateTodayDistanceKm(sortedHist);
+                    }
+                }
+
+                // Render UI immediately without waiting for place names
+                updateUI(vehiclesData);
+
+                const lastUpdatedEl = document.getElementById("lastUpdated");
+                if (lastUpdatedEl) lastUpdatedEl.innerText = new Date().toLocaleTimeString('th-TH');
+
+                // Resolve place names asynchronously in background
+                for (const v of vehiclesData) {
                     if (v.latitude && v.longitude) {
                         getPlaceName(v.latitude, v.longitude).then(name => {
                             vehicleLocationNames[v.vehicle_id] = name;
@@ -1660,10 +1379,6 @@
                         });
                     }
                 }
-
-                updateUI(vehiclesData);
-                const lastUpdatedEl = document.getElementById("lastUpdated");
-                if (lastUpdatedEl) lastUpdatedEl.innerText = new Date().toLocaleTimeString('th-TH');
             } catch (err) {
                 console.error("Fetch vehicles error:", err);
                 if (!vehiclesData || vehiclesData.length === 0) {
@@ -1671,30 +1386,29 @@
                     updateUI(vehiclesData);
                 }
             } finally {
-                isFetchingVehiclesData = false;
+                isFetchingVehicles = false;
             }
         }
 
         function renderVehicleCardHTML(v) {
             const st = getVehicleStatus(v);
             let statusColor = "bg-amber-500/20 text-amber-400 border-amber-500/30";
-            let statusLabel = "จอดพัก";
+            let statusLabel = v.status || "IDLE";
 
             if (st === "OFFLINE") {
-                statusColor = "bg-slate-800 text-slate-400 border-slate-700";
-                statusLabel = "จอดพัก (ออฟไลน์)";
+                statusColor = "bg-rose-950/80 text-rose-300 border-rose-700/80";
+                statusLabel = "OFFLINE (ขาดการเชื่อมต่อ)";
             } else if (st === "PARKED") {
                 statusColor = "bg-sky-950/90 text-sky-300 border-sky-700/80";
-                statusLabel = "🏁 ถึงที่หมายแล้ว";
+                statusLabel = "🏁 ถึงเป้าหมายแล้ว";
             } else if (st === "MOVING") {
                 statusColor = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
-                statusLabel = `วิ่งอยู่ ${v.speed_kmh || 0} km/h`;
+                statusLabel = `🚗 กำลังวิ่ง (${v.speed_kmh || 0} km/h)`;
             }
 
             const isSelected = selectedVehicleId === v.vehicle_id;
             const distanceKm = (vehicleDistancesKm[v.vehicle_id] || 0.0).toFixed(1);
             const placeName = vehicleLocationNames[v.vehicle_id] || `กำลังค้นหาสถานที่ (${(v.latitude || 0).toFixed(3)}, ${(v.longitude || 0).toFixed(3)})`;
-            const workplaceDisplay = v.workplace || v.office_name || '-';
 
             return `
                 <div class="p-3 rounded-xl border transition ${isSelected ? 'bg-sky-950/80 border-sky-500' : 'bg-slate-900 border-slate-700/80 hover:border-slate-600'}">
@@ -1709,14 +1423,13 @@
                         </span>
                     </div>
 
-                    <div class="mt-2 space-y-1 text-[11px] text-slate-300 bg-slate-800/50 p-2.5 rounded-lg cursor-pointer" onclick="selectVehicle('${v.vehicle_id}')">
-                        <div class="flex items-center justify-between">
-                            <div><i class="fa-solid fa-building text-emerald-400 mr-1.5"></i>ที่ทำการ: <span class="text-white font-medium">${workplaceDisplay}</span></div>
-                            <div><i class="fa-solid fa-gauge text-amber-400 mr-1"></i>ความเร็ว: <strong class="text-white">${v.speed_kmh || 0} km/h</strong></div>
-                        </div>
-                        <div class="text-sky-400 font-medium pt-1 border-t border-slate-700/50 flex items-center justify-between">
-                            <span><i class="fa-solid fa-route mr-1"></i>ระยะทางวันนี้:</span>
-                            <strong class="text-white">${distanceKm} กม.</strong>
+                    <div class="grid grid-cols-2 gap-2 mt-2 text-[11px] text-slate-300 bg-slate-800/50 p-2 rounded-lg cursor-pointer" onclick="selectVehicle('${v.vehicle_id}')">
+                        <div><i class="fa-solid fa-gauge text-amber-400 mr-1"></i>ความเร็ว: <strong class="text-white">${v.speed_kmh || 0} km/h</strong></div>
+                        <div><i class="fa-solid fa-user-gear text-indigo-400 mr-1"></i>คนขับ: <span class="text-slate-200">${v.driver_name || '-'}</span></div>
+                        <div><i class="fa-solid fa-building text-emerald-400 mr-1"></i>ที่ทำการ: <span class="text-slate-200">${v.office_name || '-'}</span></div>
+                        <div><i class="fa-solid fa-map-location-dot text-indigo-400 mr-1"></i>กลุ่ม ปจ.: <span class="text-slate-200">${v.province_group || '-'}</span></div>
+                        <div class="col-span-2 text-sky-400 font-medium pt-0.5 border-t border-slate-700/50">
+                            <i class="fa-solid fa-route text-sky-400 mr-1"></i>ระยะทางวันนี้: <strong class="text-white">${distanceKm} กม.</strong>
                         </div>
                     </div>
 
@@ -1737,25 +1450,22 @@
             const listEl = document.getElementById("vehicleList");
             const searchVal = document.getElementById("searchInput").value.toLowerCase();
 
-            // Display all vehicles registered in the fleet, with their real-time activity status
-            const activeVehiclesToday = vehicles;
-
-            const filtered = activeVehiclesToday.filter(v => 
+            const filtered = vehicles.filter(v => 
                 (v.vehicle_name || '').toLowerCase().includes(searchVal) ||
                 (v.license_plate || '').toLowerCase().includes(searchVal) ||
-                (v.workplace || '').toLowerCase().includes(searchVal) ||
-                (v.office_name || '').toLowerCase().includes(searchVal) ||
-                (v.driver_name || '').toLowerCase().includes(searchVal)
+                (v.driver_name || '').toLowerCase().includes(searchVal) ||
+                (v.province_group || '').toLowerCase().includes(searchVal) ||
+                (v.office_name || '').toLowerCase().includes(searchVal)
             );
 
-            document.getElementById("totalVehiclesCount").innerText = activeVehiclesToday.length;
+            document.getElementById("totalVehiclesCount").innerText = vehicles.length;
             const mobCountEl = document.getElementById("mobileTotalCount");
-            if (mobCountEl) mobCountEl.innerText = activeVehiclesToday.length;
+            if (mobCountEl) mobCountEl.innerText = vehicles.length;
 
-            const movingCount = activeVehiclesToday.filter(v => getVehicleStatus(v) === "MOVING").length;
-            const parkedCount = activeVehiclesToday.filter(v => getVehicleStatus(v) === "PARKED").length;
-            const idleCount = activeVehiclesToday.filter(v => getVehicleStatus(v) === "IDLE").length;
-            const offlineCount = activeVehiclesToday.filter(v => getVehicleStatus(v) === "OFFLINE").length;
+            const movingCount = vehicles.filter(v => getVehicleStatus(v) === "MOVING").length;
+            const parkedCount = vehicles.filter(v => getVehicleStatus(v) === "PARKED").length;
+            const idleCount = vehicles.filter(v => getVehicleStatus(v) === "IDLE").length;
+            const offlineCount = vehicles.filter(v => getVehicleStatus(v) === "OFFLINE").length;
 
             document.getElementById("movingCount").innerText = movingCount;
             document.getElementById("idleCount").innerText = idleCount;
@@ -1765,7 +1475,7 @@
             if (offlineEl) offlineEl.innerText = offlineCount;
 
             if (filtered.length === 0) {
-                listEl.innerHTML = `<div class="text-center py-10 text-slate-500 text-xs">ไม่พบรถที่มีการใช้งานในวันนี้</div>`;
+                listEl.innerHTML = `<div class="text-center py-10 text-slate-500 text-xs">ไม่พบข้อมูลรถตรงกับคำค้นหา</div>`;
                 updateMobileTrackingCard();
                 return;
             }
@@ -1838,7 +1548,7 @@
                     markerIcon = "fa-flag-checkered";
                 } else if (st === "MOVING") {
                     markerClass = "vehicle-moving pulse-moving";
-                    markerIcon = "fa-location-arrow";
+                    markerIcon = "fa-truck-fast";
                 }
 
                 const iconHtml = `
@@ -1855,25 +1565,21 @@
                 });
 
                 const placeName = vehicleLocationNames[v.vehicle_id] || `${v.latitude.toFixed(4)}, ${v.longitude.toFixed(4)}`;
-                const workplaceDisplay = v.workplace || v.office_name || '-';
-
-                const popupContent = `
-                    <div class="text-slate-900 font-sans p-1">
-                        <strong class="text-sm text-sky-600 font-bold">${v.vehicle_name || v.vehicle_id}</strong><br>
-                        <span class="text-xs text-slate-600">ทะเบียน: ${v.license_plate || '-'}</span><br>
-                        <span class="text-xs font-semibold text-emerald-600">ความเร็ว: ${v.speed_kmh || 0} km/h</span><br>
-                        <span class="text-[11px] text-slate-700 font-medium">ที่ทำการ: ${workplaceDisplay}</span><br>
-                        <span class="text-[11px] text-slate-600">สถานที่: ${placeName}</span>
-                    </div>
-                `;
 
                 if (vehicleMarkers[v.vehicle_id]) {
                     vehicleMarkers[v.vehicle_id].setLatLng([v.latitude, v.longitude]);
                     vehicleMarkers[v.vehicle_id].setIcon(customIcon);
-                    vehicleMarkers[v.vehicle_id].setPopupContent(popupContent);
                 } else {
                     const marker = L.marker([v.latitude, v.longitude], { icon: customIcon }).addTo(map);
-                    marker.bindPopup(popupContent);
+                    marker.bindPopup(`
+                        <div class="text-slate-900 font-sans p-1">
+                            <strong class="text-sm text-sky-600 font-bold">${v.vehicle_name || v.vehicle_id}</strong><br>
+                            <span class="text-xs text-slate-600">ทะเบียน: ${v.license_plate || '-'}</span><br>
+                            <span class="text-xs font-semibold text-emerald-600">ความเร็ว: ${v.speed_kmh || 0} km/h</span><br>
+                            <span class="text-[11px] text-slate-500">คนขับ: ${v.driver_name || '-'}</span><br>
+                            <span class="text-[11px] text-indigo-600">สถานที่: ${placeName}</span>
+                        </div>
+                    `);
                     marker.on('click', () => {
                         selectVehicle(v.vehicle_id);
                     });
@@ -1949,9 +1655,8 @@
             selectedVehicleId = vehicleId;
             const vehicle = vehiclesData.find(v => v.vehicle_id === vehicleId);
 
-            const wp = vehicle?.workplace || vehicle?.office_name || '-';
             document.getElementById("historyModalTitle").innerText = `ประวัติเส้นทาง: ${vehicle?.vehicle_name || vehicleId} (${vehicle?.license_plate || '-'})`;
-            document.getElementById("historyModalSub").innerText = `ที่ทำการ: ${wp} • ประจำวันนี้`;
+            document.getElementById("historyModalSub").innerText = `คนขับ: ${vehicle?.driver_name || '-'} • ประจำวันนี้`;
             
             if (typeof switchMobileTab === 'function') {
                 switchMobileTab('map');

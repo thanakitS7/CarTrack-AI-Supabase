@@ -213,31 +213,11 @@ fun LiveTrackingScreen(
     }
 
     // Connect real mobile GPS location updates
-    // NOTE: Previously this used the raw android.location.LocationManager with
-    // GPS_PROVIDER/NETWORK_PROVIDER directly. GPS_PROVIDER alone can take a very
-    // long time (or never, indoors/emulator) to produce a fix, and many devices
-    // no longer expose NETWORK_PROVIDER — so onLocationChanged() could simply
-    // never fire, meaning nothing was ever pushed to Supabase and the web
-    // dashboard looked "stuck". FusedLocationProviderClient (Google Play services)
-    // blends GPS + WiFi + cell and returns a fix in seconds, and also lets us pull
-    // an immediate last-known location on start instead of waiting for the first update.
     DisposableEffect(isGpsPermissionGranted) {
         if (isGpsPermissionGranted) {
-            val hasFine = androidx.core.content.ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            val hasCoarse = androidx.core.content.ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-
-            val fusedClient = com.google.android.gms.location.LocationServices
-                .getFusedLocationProviderClient(context)
-
-            val locationCallback = object : com.google.android.gms.location.LocationCallback() {
-                override fun onLocationResult(result: com.google.android.gms.location.LocationResult) {
-                    val location = result.lastLocation ?: return
+            val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+            val locationListener = object : LocationListener {
+                override fun onLocationChanged(location: Location) {
                     val speedKmh = if (location.hasSpeed()) (location.speed * 3.6f).toInt() else 0
                     viewModel.updateRealGpsLocation(
                         lat = location.latitude,
@@ -247,41 +227,33 @@ fun LiveTrackingScreen(
                         accuracy = location.accuracy
                     )
                 }
+                @Deprecated("Deprecated in Java")
+                override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+                override fun onProviderEnabled(provider: String) {}
+                override fun onProviderDisabled(provider: String) {}
             }
+
+            val hasFine = androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            val hasCoarse = androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
             if (hasFine || hasCoarse) {
                 try {
-                    val locationRequest = com.google.android.gms.location.LocationRequest.Builder(
-                        com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY,
-                        1000L // update every 1s while the app is open — matches the old GPS_PROVIDER cadence
-                    )
-                        .setMinUpdateIntervalMillis(1000L)
-                        .setWaitForAccurateLocation(false) // don't block waiting for a perfect fix — send what we have
-                        .build()
+                    if (locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true) {
+                        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 1f, locationListener)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
 
-                    fusedClient.requestLocationUpdates(
-                        locationRequest,
-                        locationCallback,
-                        android.os.Looper.getMainLooper()
-                    )
-
-                    // Immediately use the last known location (usually available instantly)
-                    // instead of waiting for the first callback, so the map/web isn't blank on open.
-                    try {
-                        fusedClient.lastLocation.addOnSuccessListener { location: Location? ->
-                            if (location != null) {
-                                val speedKmh = if (location.hasSpeed()) (location.speed * 3.6f).toInt() else 0
-                                viewModel.updateRealGpsLocation(
-                                    lat = location.latitude,
-                                    lng = location.longitude,
-                                    speedKmh = speedKmh,
-                                    heading = location.bearing,
-                                    accuracy = location.accuracy
-                                )
-                            }
-                        }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
+                try {
+                    if (locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true) {
+                        locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 2000L, 3f, locationListener)
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -290,7 +262,7 @@ fun LiveTrackingScreen(
 
             onDispose {
                 try {
-                    fusedClient.removeLocationUpdates(locationCallback)
+                    locationManager?.removeUpdates(locationListener)
                 } catch (e: Exception) {}
             }
         } else {
