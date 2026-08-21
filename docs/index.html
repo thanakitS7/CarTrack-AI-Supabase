@@ -1345,7 +1345,7 @@
             const startIso = startOfDay.toISOString();
             const endIso = endOfDay.toISOString();
 
-            const tables = ['location_history', 'telemetry_history', 'vehicle_usage_logs'];
+            const tables = ['location_history', 'vehicle_usage_logs'];
             for (const tbl of tables) {
                 for (const qk of queryKeys) {
                     try {
@@ -1404,7 +1404,16 @@
         }
 
         // --- Fetch Vehicles & Telemetry from Supabase ---
+        let isFetchingVehiclesData = false; // re-entrancy guard: see note below
         async function fetchVehiclesData() {
+            // If a previous cycle is still running (e.g. because the per-vehicle history
+            // lookups are slow, or the vehicle list has grown large), skip this tick instead
+            // of starting an overlapping call on top of it. Without this guard, the 4-second
+            // setInterval kept firing new calls faster than old ones finished, and the pile-up
+            // of in-flight requests was what caused the page to get stuck on
+            // "กำลังโหลดข้อมูลรถจาก Supabase..." with thousands of console errors.
+            if (isFetchingVehiclesData) return;
+            isFetchingVehiclesData = true;
             try {
                 const cleanedUrl = supabaseUrl.trim().replace(/\/$/, "");
                 const headers = {
@@ -1430,9 +1439,13 @@
                     baseVehicles = DEFAULT_SAMPLE_VEHICLES.map(v => normalizeVehicle(v));
                 }
 
-                // 2. Fetch latest live locations from 'location_history' and 'telemetry_history'
+                // 2. Fetch latest live locations from 'location_history'
+                // (NOTE: 'telemetry_history' was removed here — that table never existed in
+                // this project's actual Supabase schema, so every request to it was a guaranteed
+                // 404. Firing it on every vehicle, every 4-second refresh, was pure wasted
+                // network traffic and console-error noise for no benefit.)
                 let latestLocationsMap = {};
-                const locTables = ['location_history', 'telemetry_history'];
+                const locTables = ['location_history'];
                 for (const tbl of locTables) {
                     try {
                         let locRes = await fetch(`${cleanedUrl}/rest/v1/${tbl}?order=created_at.desc&limit=1000`, { headers });
@@ -1561,10 +1574,16 @@
                 });
 
                 // 5. Also dynamically include vehicles discovered in location_history or vehicle_usage_logs that may not be in 'vehicles' table
+                // Capped at MAX_PHANTOM_VEHICLES: every test run of the mobile app can generate a new
+                // local vehicle_id, so this list can otherwise grow without bound over time. Each entry
+                // here costs extra per-vehicle history lookups below, so an unbounded list is what was
+                // making every refresh cycle slower and slower until the page got stuck loading.
+                const MAX_PHANTOM_VEHICLES = 30;
                 const registeredPlates = new Set(vehiclesData.map(v => cleanPlateKey(v.license_plate)));
-                
+
                 // Add from latestLocationsMap first
                 for (const [vKey, loc] of Object.entries(latestLocationsMap)) {
+                    if (vehiclesData.length >= MAX_PHANTOM_VEHICLES + Object.keys(baseVehicles).length) break;
                     const locPlateKey = cleanPlateKey(loc.license_plate || vKey);
                     if (!registeredPlates.has(locPlateKey) && vKey !== '') {
                         const newVeh = normalizeVehicle({
@@ -1588,6 +1607,7 @@
 
                 // Add from latestUsageMap
                 for (const [vKey, u] of Object.entries(latestUsageMap)) {
+                    if (vehiclesData.length >= MAX_PHANTOM_VEHICLES + Object.keys(baseVehicles).length) break;
                     const uPlateKey = cleanPlateKey(u.license_plate || vKey);
                     if (!registeredPlates.has(uPlateKey) && vKey !== '') {
                         const newVeh = normalizeVehicle({
@@ -1650,6 +1670,8 @@
                     vehiclesData = DEFAULT_SAMPLE_VEHICLES.map(v => normalizeVehicle(v));
                     updateUI(vehiclesData);
                 }
+            } finally {
+                isFetchingVehiclesData = false;
             }
         }
 
