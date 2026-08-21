@@ -1311,7 +1311,7 @@
                 // Parallel fetch vehicles, latest telemetry, and active usage logs
                 const [vehRes, locRes, usageRes] = await Promise.allSettled([
                     fetch(`${cleanedUrl}/rest/v1/vehicles?select=*`, { headers, cache: 'no-store' }),
-                    fetch(`${cleanedUrl}/rest/v1/location_history?select=*&order=created_at.desc&limit=600`, { headers, cache: 'no-store' }),
+                    fetch(`${cleanedUrl}/rest/v1/location_history?select=*&order=created_at.desc&limit=300`, { headers, cache: 'no-store' }),
                     fetch(`${cleanedUrl}/rest/v1/vehicle_usage_logs?select=*&order=created_at.desc&limit=100`, { headers, cache: 'no-store' })
                 ]);
 
@@ -3232,8 +3232,8 @@
         loadStoredUser();
         fetchSupabaseUsers();
         fetchVehiclesData();
-        setInterval(fetchVehiclesData, 4000);
-        setInterval(fetchSupabaseUsers, 20000);
+        setInterval(fetchVehiclesData, 15000); // Changed from 4s to 15s to save Supabase Egress
+        setInterval(fetchSupabaseUsers, 60000);
     </script>
 </body>
 </html>
